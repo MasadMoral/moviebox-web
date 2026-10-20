@@ -6,7 +6,7 @@
 Search, browse, stream, resume, subtitles and downloads, from any browser.
 
 ![Rust](https://img.shields.io/badge/Rust-1.90%2B-orange?logo=rust)
-![Platforms](https://img.shields.io/badge/Android%20%7C%20Linux%20%7C%20Windows-supported-blue)
+![Platforms](https://img.shields.io/badge/Android%20%7C%20Linux%20%7C%20macOS%20%7C%20Windows-supported-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 </div>
@@ -95,6 +95,31 @@ cargo build --release
 ```
 
 On desktop, **External player** copies the stream link. In VLC use *Media > Open Network Stream* and paste it. For mpv: `mpv "<link>"`.
+
+### macOS
+
+1. Install the Apple command line tools (compiler and Git). Skip this if you already have them:
+```bash
+xcode-select --install
+```
+2. Install Rust (1.90 or newer):
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
+Or with Homebrew: `brew install rust git`
+
+3. Build and run:
+```bash
+git clone https://github.com/MasadMoral/moviebox-web.git
+cd moviebox-web
+cargo build --release
+./target/release/moviebox-web
+```
+
+Open **http://127.0.0.1:8787** in Safari or Chrome. Works on both Apple Silicon and Intel Macs.
+
+**External player** copies the stream link. In VLC use *File > Open Network*, in IINA use *File > Open URL*, or for mpv run `mpv "<link>"`.
 
 ### Windows
 
