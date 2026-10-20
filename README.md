@@ -31,7 +31,7 @@ Search, browse, stream, resume, subtitles and downloads, from any browser.
 You need [Rust](https://rustup.rs) 1.90 or newer and Git.
 
 ```bash
-git clone https://github.com/YOUR-GITHUB-USERNAME/moviebox-web.git
+git clone https://github.com/MasadMoral/moviebox-web.git
 cd moviebox-web
 cargo build --release
 ./target/release/moviebox-web
@@ -52,7 +52,7 @@ Install Termux from [F-Droid](https://f-droid.org/packages/com.termux/). Do not 
 
 ```bash
 pkg update -y && pkg install rust git -y
-git clone https://github.com/YOUR-GITHUB-USERNAME/moviebox-web.git ~/moviebox-web
+git clone https://github.com/MasadMoral/moviebox-web.git ~/moviebox-web
 cd ~/moviebox-web
 cargo build --release
 termux-wake-lock
@@ -88,7 +88,7 @@ sudo pacman -S --needed base-devel git rustup && rustup default stable
 
 Then build and run:
 ```bash
-git clone https://github.com/YOUR-GITHUB-USERNAME/moviebox-web.git
+git clone https://github.com/MasadMoral/moviebox-web.git
 cd moviebox-web
 cargo build --release
 ./target/release/moviebox-web
@@ -104,7 +104,7 @@ On desktop, **External player** copies the stream link. In VLC use *Media > Open
 4. Open a new PowerShell window:
 
 ```powershell
-git clone https://github.com/YOUR-GITHUB-USERNAME/moviebox-web.git
+git clone https://github.com/MasadMoral/moviebox-web.git
 cd moviebox-web
 cargo build --release
 .\target\release\moviebox-web.exe
