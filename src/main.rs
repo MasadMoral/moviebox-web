@@ -1,8 +1,9 @@
 use axum::{
     Json, Router,
     body::Body,
+    middleware::{self, Next},
     extract::{Query, State},
-    http::{HeaderMap, HeaderName, HeaderValue, StatusCode, header},
+    http::{HeaderMap, HeaderName, HeaderValue, Request, StatusCode, header},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
 };
@@ -22,6 +23,29 @@ async fn index() -> Html<String> {
         }
     }
     Html(INDEX.to_string())
+}
+
+async fn auth(req: Request<Body>, next: Next) -> Response {
+    use base64::Engine;
+    if let Ok(pw) = std::env::var("MBW_PASSWORD") {
+        let ok = req
+            .headers()
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Basic "))
+            .and_then(|b| base64::engine::general_purpose::STANDARD.decode(b.trim()).ok())
+            .and_then(|b| String::from_utf8(b).ok())
+            .map(|up| up.splitn(2, ':').nth(1).unwrap_or("") == pw)
+            .unwrap_or(false);
+        if !ok {
+            return Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .header(header::WWW_AUTHENTICATE, "Basic realm=\"MovieBox Web\"")
+                .body(Body::from("Login required"))
+                .unwrap();
+        }
+    }
+    next.run(req).await
 }
 
 #[derive(Clone)]
@@ -472,12 +496,8 @@ async fn proxy(State(a): State<App>, Query(q): Query<ProxyQ>, req: HeaderMap) ->
 #[tokio::main]
 async fn main() {
     let svc = Arc::new(MovieBoxService::new());
-    // wait for the MovieBox session before serving (fixes first-request failures)
-    for _ in 0..3 {
-        if let Ok(Ok(())) = tokio::time::timeout(std::time::Duration::from_secs(15), svc.client.init()).await {
-            break;
-        }
-    }
+    // try to open the MovieBox session first (max 10s), then serve either way
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(10), svc.client.init()).await;
     let http = reqwest::Client::builder().build().unwrap();
     let app = Router::new()
         .route("/", get(index))
@@ -491,9 +511,16 @@ async fn main() {
         .route("/api/suggest", get(suggest))
         .route("/proxy", get(proxy))
         .with_state(App { svc, http });
-    let addr = "127.0.0.1:8787";
+    // MBW_ADDR (default 127.0.0.1:8787) and optional MBW_PASSWORD (HTTP basic auth, any username)
+    let addr = std::env::var("MBW_ADDR").unwrap_or_else(|_| "127.0.0.1:8787".into());
+    let app = app.layer(middleware::from_fn(auth));
+    if std::env::var("MBW_PASSWORD").is_ok() {
+        println!("Password protection: ON");
+    } else if !addr.starts_with("127.") && !addr.starts_with("localhost") {
+        println!("WARNING: listening on {addr} without MBW_PASSWORD - anyone who can reach it can use it!");
+    }
     println!("Open http://{addr} in your browser");
-    axum::serve(tokio::net::TcpListener::bind(addr).await.unwrap(), app)
+    axum::serve(tokio::net::TcpListener::bind(&addr).await.unwrap(), app)
         .await
         .unwrap();
 }

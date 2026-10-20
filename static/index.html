@@ -516,8 +516,14 @@ async function current(){
 }
 async function external(){
   const r=await current();if(!r)return;
+  const path='/proxy?'+pq(r);
+  if(!/Android/i.test(navigator.userAgent)){      // desktop: copy the link for VLC / mpv
+    try{await navigator.clipboard.writeText(location.origin+path);msg('Link copied. Paste it in VLC: Media > Open Network Stream')}
+    catch(e){prompt('Copy this link into VLC (Open Network Stream):',location.origin+path)}
+    setTimeout(()=>msg(''),4000);return;
+  }
   V.pause();
-  location.href='intent://'+location.host+'/proxy?'+pq(r)+'#Intent;scheme=http;type=video/*;end';
+  location.href='intent://'+location.host+path+'#Intent;scheme=http;type=video/*;end';
 }
 async function download(){
   const r=await current();if(!r)return;
