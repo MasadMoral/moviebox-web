@@ -1,4 +1,7 @@
-target/
+/target/
 *.patch
 *.orig
 *.rej
+/app/
+/jniLibs/
+*.apk

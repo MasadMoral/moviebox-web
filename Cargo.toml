@@ -1,7 +1,15 @@
 [package]
 name = "moviebox-web"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
+
+[lib]
+name = "moviebox_web"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "moviebox-web"
+path = "src/main.rs"
 
 [dependencies]
 moviebox-tui = { git = "https://github.com/skumarbsft/MovieBox-Tui", branch = "fix/moviebox-stream-recovery-205" }

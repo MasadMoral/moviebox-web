@@ -23,7 +23,7 @@ Search, browse, stream, resume, subtitles and downloads, from any browser.
 | **Episodes** | "All" panel with a season dropdown and episode grid |
 | **Providers** | MovieBox, 4KHDHub, Dramachi, CircleFTP and DhakaFlix (BDIX), switchable from the settings icon |
 | **Search** | Live suggestions from the selected provider, with posters |
-| **Playback tools** | Hold the video for 2x speed, fullscreen with controls, open in an external player, download to storage |
+| **Playback tools** | Hold the video for 2x speed, swipe left/right for brightness/volume, fullscreen with controls (both landscape sides), Fill / Fit / Stretch and 16:9 / 4:3 / 21:9 screen modes, Picture-in-Picture, Bluetooth/headset controls, open in an external player, download with progress notification or copy the download link |
 | **Hosting ready** | Optional password and configurable address |
 
 ## Quick start
@@ -41,6 +41,15 @@ Open **http://127.0.0.1:8787** in your browser.
 
 > The first build takes a while because it compiles all dependencies
 > (about 2-5 minutes on a PC, 10-30 minutes on a phone). Later builds are fast.
+
+### Prebuilt downloads
+
+Check the [Releases](https://github.com/MasadMoral/moviebox-web/releases) page for ready-made builds:
+
+- **Windows / Linux / macOS:** extract the archive, run `moviebox-web` (or `moviebox-web.exe`), then open http://127.0.0.1:8787. Linux builds are static x86_64; macOS builds are universal (Apple Silicon + Intel) and unsigned.
+- **Android:** install `moviebox-web-android-arm64.apk` (arm64, Android 8+, debug-signed for sideloading).
+
+The desktop app is a local server, not a GUI window. Keep the terminal open while watching.
 
 ---
 

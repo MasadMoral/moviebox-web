@@ -1,7 +1,7 @@
 <!doctype html>
 <html><head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f1115">
 <title>MovieBox</title>
 <style>
@@ -30,8 +30,28 @@ header button{padding:10px 12px}
 #back{position:absolute;top:8px;left:8px;z-index:2}
 .ovr{position:absolute;top:8px;right:8px;z-index:2;display:flex;gap:6px;transition:opacity .25s}
 #player.idle .ov,#player.idle .ovr{opacity:0;pointer-events:none}
-#player.fs{position:fixed;inset:0;max-height:none}
-#player.fs video{height:100%;max-height:none;aspect-ratio:auto}
+body.fsv{overflow:hidden}
+#player:fullscreen,#player:-webkit-full-screen{position:fixed;inset:0;width:100%;height:100%;max-height:none;background:#000}
+#player.fs{position:fixed;inset:0;width:100%;height:100vh;height:100dvh;max-height:none;z-index:2147483647;background:#000}
+#player.fs video{position:absolute;inset:0;width:100%;height:100%;max-height:none;aspect-ratio:auto;object-fit:contain;background:#000}
+#player.fs.rfill video{object-fit:cover}
+#player.fs.rstretch video{object-fit:fill}
+#player.fs.r169 video,#player.fs.r43 video,#player.fs.r219 video{inset:auto;left:50%;top:50%;transform:translate(-50%,-50%);height:auto;object-fit:fill}
+#player.fs.r169 video{width:min(100vw,calc(100vh * 1.7778));aspect-ratio:16/9}
+#player.fs.r43 video{width:min(100vw,calc(100vh * 1.3333));aspect-ratio:4/3}
+#player.fs.r219 video{width:min(100vw,calc(100vh * 2.3333));aspect-ratio:21/9}
+#player.fs .ovr{top:calc(8px + env(safe-area-inset-top));right:calc(8px + env(safe-area-inset-right))}
+#player.fs #back{top:calc(8px + env(safe-area-inset-top));left:calc(8px + env(safe-area-inset-left))}
+#player.fs #cc{top:calc(52px + env(safe-area-inset-top));right:calc(8px + env(safe-area-inset-right))}
+#player.fs #subs{bottom:calc(14% + env(safe-area-inset-bottom))}
+#ratb{display:none;position:absolute;top:calc(8px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:3;background:#000a;padding:8px 12px;border-radius:999px;font-size:13px;transition:opacity .25s}
+#player.fs #ratb{display:inline-flex}
+#player.idle #ratb{opacity:0;pointer-events:none}
+#ratmenu{display:none;position:absolute;top:calc(52px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:7;background:#10131af2;border-radius:12px;padding:6px;min-width:190px;box-shadow:0 10px 30px #0008}
+#ratmenu button{display:flex;justify-content:space-between;align-items:center;width:100%;background:transparent;border-radius:8px;padding:9px 12px;font-size:13px;text-align:left}
+#ratmenu button.on{background:var(--acc);color:#04201a}
+#ratmenu small{color:var(--mut);font-size:11px;margin-left:10px}
+#ratmenu button.on small{color:#04201a}
 .card{position:relative}
 .card .x{position:absolute;top:4px;right:4px;padding:2px 8px;background:#000b;border-radius:8px;font-size:12px}
 .phead{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--card2)}
@@ -52,6 +72,14 @@ select{border-radius:10px;max-width:100%}
 .ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none;pointer-events:none}
 #player video{touch-action:none;-webkit-touch-callout:none;user-select:none}
 #spd{position:absolute;top:56px;left:50%;transform:translateX(-50%);background:#000b;color:#fff;padding:6px 14px;border-radius:999px;font-size:13px;display:none;z-index:3;pointer-events:none}
+#ghud{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:none;align-items:center;gap:10px;background:#000b;padding:10px 16px;border-radius:14px;z-index:5;pointer-events:none;min-width:190px}
+#ghud .ic{width:22px;height:22px}
+#ghudtrack{flex:1;height:5px;background:#ffffff33;border-radius:3px;overflow:hidden}
+#ghudfill{height:100%;width:50%;background:var(--acc);border-radius:3px}
+#ghudnum{font-size:13px;min-width:40px;text-align:right;font-weight:600}
+body.pip #player{position:fixed;inset:0;z-index:9999;background:#000}
+body.pip #player video{inset:0!important;transform:none!important;width:100%!important;height:100%!important;max-height:none!important;aspect-ratio:auto!important;object-fit:contain!important}
+body.pip #player .ovr,body.pip #player #back,body.pip #player #ratb,body.pip #player #ratmenu{display:none!important}
 #sug .row{display:flex;gap:10px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--card2)}
 #sug .row img{width:34px;height:48px;object-fit:cover;border-radius:6px;background:#222;flex:none}
 #sug .row b{font-weight:500}
@@ -82,6 +110,12 @@ select{border-radius:10px;max-width:100%}
 <symbol id="i-re" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></symbol>
 <symbol id="i-cc" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10.5 10.2a2 2 0 1 0 0 3.6M17 10.2a2 2 0 1 0 0 3.6"/></symbol>
 <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></symbol>
+<symbol id="i-pip" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><rect x="11" y="11" width="7" height="6" rx="1"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+<symbol id="i-vol" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 6a9 9 0 0 1 0 12"/></symbol>
+<symbol id="i-volmute" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m16 9 5 5M21 9l-5 5"/></symbol>
+<symbol id="i-ratio" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 12h12M6 12l2-2M6 12l2 2M18 12l-2-2M18 12l-2 2"/></symbol>
 </svg>
 <header id="hd">
   <input id="q" placeholder="Search movies, shows, anime…" enterkeyhint="search" autocomplete="off">
@@ -112,9 +146,20 @@ select{border-radius:10px;max-width:100%}
       <button id="ccb" class="ov" onclick="toggleCC()" aria-label="Subtitles"><svg class="ic"><use href="#i-cc"/></svg></button>
       <button id="prev" class="ov" onclick="stepEp(-1)" style="display:none" aria-label="Previous"><svg class="ic"><use href="#i-prev"/></svg></button>
       <button id="next" class="ov" onclick="stepEp(1)" style="display:none" aria-label="Next">Next <svg class="ic"><use href="#i-next"/></svg></button>
+      <button id="pipb" class="ov" onclick="enterPip()" style="display:none" aria-label="Pop-up player"><svg class="ic"><use href="#i-pip"/></svg></button>
       <button id="fs" class="ov" onclick="toggleFs()" aria-label="Fullscreen"><svg class="ic"><use href="#i-fs"/></svg></button>
     </div>
     <div id="spd">2× ▶▶</div>
+    <button id="ratb" onclick="toggleRatioMenu(event)" aria-label="Screen ratio"><svg class="ic"><use href="#i-ratio"/></svg><span id="ratlbl">Fill</span></button>
+    <div id="ratmenu">
+      <button data-r="fit" onclick="setRatio('fit')">Fit <small>whole video</small></button>
+      <button data-r="fill" onclick="setRatio('fill')">Fill <small>crop edges</small></button>
+      <button data-r="stretch" onclick="setRatio('stretch')">Stretch <small>distort</small></button>
+      <button data-r="16:9" onclick="setRatio('16:9')">16:9 <small>widescreen</small></button>
+      <button data-r="4:3" onclick="setRatio('4:3')">4:3 <small>classic</small></button>
+      <button data-r="21:9" onclick="setRatio('21:9')">21:9 <small>cinema</small></button>
+    </div>
+    <div id="ghud"><svg class="ic" id="ghudicon"><use href="#i-sun"/></svg><div id="ghudtrack"><div id="ghudfill"></div></div><b id="ghudnum">50%</b></div>
     <video id="v" controls controlslist="nofullscreen" playsinline></video>
     <div id="subs"></div>
     <div id="cc" onclick="event.stopPropagation()"></div>
@@ -129,6 +174,7 @@ select{border-radius:10px;max-width:100%}
   <div class="acts ha">
     <button class="pri" onclick="external()"><svg class="ic"><use href="#i-ext"/></svg> External player</button>
     <button onclick="download()"><svg class="ic"><use href="#i-dl"/></svg> Download</button>
+    <button onclick="copyDownload()"><svg class="ic"><use href="#i-link"/></svg> Copy link</button>
     <button onclick="reload()"><svg class="ic"><use href="#i-re"/></svg> Retry</button>
   </div>
   <div class="info ha" style="padding-bottom:0"><select id="qsel" onchange="playIdx(+this.value,0)"></select></div>
@@ -231,16 +277,46 @@ function clearLib(){if(confirm('Clear watch history?')){ls.set('hist',{});render
 
 /* ---------- fullscreen (whole player, so Next/Prev stay visible) ---------- */
 const P=$('#player');
+const isFs=()=>!!(document.fullscreenElement||document.webkitFullscreenElement);
 function toggleFs(){
-  if(document.fullscreenElement){document.exitFullscreen().catch(()=>{});return}
+  if(isFs()){try{const x=document.exitFullscreen||document.webkitExitFullscreen;Promise.resolve(x.call(document)).catch(()=>{})}catch(e){}return}
   const f=P.requestFullscreen||P.webkitRequestFullscreen;if(!f)return;
-  Promise.resolve(f.call(P)).then(()=>{try{const o=screen.orientation.lock('landscape');o&&o.catch&&o.catch(()=>{})}catch(e){}}).catch(()=>{});
+  // Orientation is handled by the Android shell (sensor landscape, both 180° sides).
+  Promise.resolve(f.call(P)).catch(()=>{});
 }
-document.addEventListener('fullscreenchange',()=>{setTimeout(applySubStyle,100);
-  const on=!!document.fullscreenElement;P.classList.toggle('fs',on);$('#fs').innerHTML=ic(on?'xfs':'fs');
-  if(!on){try{screen.orientation.unlock()}catch(e){}}
-  wake();
+/* screen ratio / fit mode (fullscreen) */
+const RATIOS={fit:'Fit',fill:'Fill',stretch:'Stretch','16:9':'16:9','4:3':'4:3','21:9':'21:9'};
+const RCLASS={fit:'rfit',fill:'rfill',stretch:'rstretch','16:9':'r169','4:3':'r43','21:9':'r219'};
+let vratio=ls.get('vratio','fill');
+function hideRatioMenu(){$('#ratmenu').style.display='none'}
+function toggleRatioMenu(e){
+  if(e)e.stopPropagation();
+  const m=$('#ratmenu'),open=m.style.display==='block';
+  m.style.display=open?'none':'block';
+  if(open){wake()}else{P.classList.remove('idle');clearTimeout(idleT);$('#cc').style.display='none'}
+}
+function setRatio(mode,save=true){
+  if(!RATIOS[mode])mode='fit';
+  vratio=mode;
+  Object.values(RCLASS).forEach(c=>P.classList.remove(c));
+  P.classList.add(RCLASS[mode]);
+  $('#ratlbl').textContent=RATIOS[mode];
+  document.querySelectorAll('#ratmenu button').forEach(b=>b.classList.toggle('on',b.dataset.r===mode));
+  hideRatioMenu();
+  if(save){ls.set('vratio',mode);wake()}
+}
+setRatio(vratio,false);
+document.addEventListener('click',e=>{
+  const m=$('#ratmenu');
+  if(m.style.display==='block'&&!m.contains(e.target)&&!$('#ratb').contains(e.target))m.style.display='none';
 });
+function onFsChange(){
+  setTimeout(applySubStyle,100);
+  const on=isFs();P.classList.toggle('fs',on);document.body.classList.toggle('fsv',on);$('#fs').innerHTML=ic(on?'xfs':'fs');
+  if(!on){hideRatioMenu();try{screen.orientation.unlock()}catch(e){}}
+  wake();
+}
+['fullscreenchange','webkitfullscreenchange'].forEach(ev=>document.addEventListener(ev,onFsChange));
 let idleT;
 function wake(){P.classList.remove('idle');clearTimeout(idleT);idleT=setTimeout(()=>{if(!V.paused&&$('#cc').style.display!=='block')P.classList.add('idle')},3000)}
 ['touchstart','mousemove','click','keydown'].forEach(ev=>P.addEventListener(ev,wake,{passive:true}));
@@ -377,30 +453,144 @@ async function playIdx(i,t){
     V.play().catch(()=>{});
   }catch(e){if(my===tok)msg(friendly(e))}
 }
-V.addEventListener('timeupdate',()=>saveProgress(false));
-V.addEventListener('pause',()=>{saveProgress(true);wake()});
-V.addEventListener('playing',()=>msg(''));
-V.addEventListener('error',()=>{if(V.getAttribute('src'))msg("Can't play this format in the browser. Use External player or try another quality.")});
-V.addEventListener('ended',()=>{if(cur&&cur._ss)stepEp(1)});
+V.addEventListener('timeupdate',()=>{saveProgress(false);pushMedia(false)});
+V.addEventListener('pause',()=>{saveProgress(true);wake();pushMedia(true)});
+V.addEventListener('playing',()=>{msg('');pushMedia(true)});
+V.addEventListener('error',()=>{if(V.getAttribute('src'))msg("Can't play this format in the browser. Use External player or try another quality.");pushMedia(true)});
+V.addEventListener('ended',()=>{pushMedia(true);if(cur&&cur._ss)stepEp(1)});
+V.addEventListener('loadedmetadata',()=>pushMedia(true));
+V.addEventListener('emptied',()=>pushMedia(true));
 window.addEventListener('pagehide',()=>saveProgress(true));
+
+/* ---------- native bridge (Android shell) ---------- */
+const hasBridge=()=>!!(window.flutter_inappwebview&&window.flutter_inappwebview.callHandler);
+function native(method,...args){
+  if(!hasBridge())return Promise.resolve(null);
+  try{return Promise.resolve(window.flutter_inappwebview.callHandler('mbwNative',{method,args})).catch(()=>null)}
+  catch(e){return Promise.resolve(null)}
+}
+let brightness=0.75,volume=1;
+function initNative(){
+  if(hasBridge())V.style.filter='';
+  native('getBrightness').then(v=>{if(typeof v==='number'&&v>=0)brightness=v});
+  native('getVolume').then(v=>{if(typeof v==='number')volume=v});
+  const pb=$('#pipb');if(pb)pb.style.display=hasBridge()?'inline-flex':'none';
+}
+document.addEventListener('flutterInAppWebViewPlatformReady',initNative);
+setTimeout(initNative,1500);
+
+/* ---------- swipe: left = brightness, right = volume ---------- */
+let hudT=null;
+function showHud(kind,v){
+  const el=$('#ghud'),icon=$('#ghudicon');
+  icon.innerHTML=`<use href="#i-${kind==='bright'?'sun':(v<=0?'volmute':'vol')}"/>`;
+  $('#ghudfill').style.width=Math.round(v*100)+'%';
+  $('#ghudnum').textContent=Math.round(v*100)+'%';
+  el.style.display='flex';clearTimeout(hudT);hudT=setTimeout(()=>el.style.display='none',1100);
+}
+function applyBrightness(v){
+  brightness=Math.max(0.02,Math.min(1,v));
+  if(hasBridge())native('setBrightness',brightness);
+  else V.style.filter='brightness('+(0.25+0.75*brightness)+')';
+  showHud('bright',brightness);
+}
+function applyVolume(v){
+  volume=Math.max(0,Math.min(1,v));
+  if(hasBridge())native('setVolume',volume);
+  else V.volume=volume;
+  showHud('vol',volume);
+}
 
 /* hold finger on the video = double the CURRENT speed (1.5x -> 3x), back to it on release */
 let lpT=null,fast=false,userRate=1;
 V.addEventListener('ratechange',()=>{if(!fast){userRate=V.playbackRate;V.defaultPlaybackRate=userRate}});
-V.addEventListener('pointerdown',e=>{
-  const r=V.getBoundingClientRect();
-  if(V.paused||e.clientY>r.bottom-64)return;   // keep the control bar usable
-  clearTimeout(lpT);
-  lpT=setTimeout(()=>{
-    fast=true;
-    const f=Math.min(16,userRate*2);
-    V.playbackRate=f;
-    $('#spd').textContent=(+f.toFixed(2))+'× ▶▶';$('#spd').style.display='block';
-  },450);
-});
 const endFast=()=>{clearTimeout(lpT);if(fast){fast=false;V.playbackRate=userRate;$('#spd').style.display='none'}};
-['pointerup','pointercancel','pointerleave'].forEach(ev=>V.addEventListener(ev,endFast));
+
+let gest=null;
+V.addEventListener('pointerdown',e=>{
+  if(e.button!==undefined&&e.button!==0)return;
+  const r=V.getBoundingClientRect();
+  if(e.clientY>r.bottom-64)return;   // keep the native control bar usable
+  gest={id:e.pointerId,x:e.clientX,y:e.clientY,mode:null,side:e.clientX<r.left+r.width/2?'bright':'vol',t:Date.now()};
+  gest.start=gest.side==='bright'?brightness:volume;
+  try{V.setPointerCapture(e.pointerId)}catch(_){}
+  if(!V.paused){
+    clearTimeout(lpT);
+    lpT=setTimeout(()=>{
+      if(!gest||gest.mode)return;
+      fast=true;
+      const f=Math.min(16,userRate*2);
+      V.playbackRate=f;
+      $('#spd').textContent=(+f.toFixed(2))+'× ▶▶';$('#spd').style.display='block';
+    },450);
+  }
+});
+V.addEventListener('pointermove',e=>{
+  if(!gest||e.pointerId!==gest.id)return;
+  const dx=e.clientX-gest.x,dy=e.clientY-gest.y;
+  if(!gest.mode){
+    if(Math.abs(dx)<12&&Math.abs(dy)<12)return;
+    clearTimeout(lpT);
+    if(Math.abs(dx)>=Math.abs(dy)){gest.mode='x';return}   // horizontal: let native seek win
+    gest.mode='y';
+    if(fast)endFast();
+  }
+  if(gest.mode==='y'){
+    if(e.cancelable)e.preventDefault();
+    const h=V.getBoundingClientRect().height||1;
+    const v=gest.start+(gest.y-e.clientY)/(h*0.6);
+    if(gest.side==='bright')applyBrightness(v);else applyVolume(v);
+  }
+},{passive:false});
+function endGesture(e){
+  if(gest&&e.pointerId!==undefined&&e.pointerId!==gest.id)return;
+  if(gest&&gest.mode==='y'){clearTimeout(hudT);hudT=setTimeout(()=>$('#ghud').style.display='none',900)}
+  gest=null;clearTimeout(lpT);endFast();
+}
+['pointerup','pointercancel'].forEach(ev=>V.addEventListener(ev,endGesture));
+V.addEventListener('lostpointercapture',endGesture);
 V.addEventListener('contextmenu',e=>e.preventDefault());
+
+/* ---------- media session / hardware keys / PiP ---------- */
+function mediaPayload(){
+  return {
+    playing:!V.paused&&!!V.getAttribute('src'),
+    hasVideo:!!V.getAttribute('src'),
+    title:cur?cur.title:'',
+    subtitle:(cur&&cur._ss)?('S'+String(season).padStart(2,'0')+'E'+String(episode).padStart(2,'0')):'',
+    position:Math.round((V.currentTime||0)*1000),
+    duration:Math.round((V.duration||0)*1000),
+    canNext:!!(cur&&cur._ss),canPrev:!!(cur&&cur._ss)
+  };
+}
+let mediaT=0;
+function pushMedia(force){
+  const now=Date.now();if(!force&&now-mediaT<1000)return;mediaT=now;
+  native('mediaState',mediaPayload());
+}
+window.mbwMediaCommand=cmd=>{
+  switch(cmd){
+    case 'toggle':if(V.paused)V.play().catch(()=>{});else V.pause();break;
+    case 'play':V.play().catch(()=>{});break;
+    case 'pause':case 'stop':V.pause();break;
+    case 'next':stepEp(1);break;
+    case 'prev':stepEp(-1);break;
+    default:
+      if(cmd&&cmd.indexOf('seek:')===0){const t=+cmd.slice(5)/1000;if(isFinite(t))V.currentTime=t}
+  }
+  setTimeout(()=>pushMedia(true),150);
+};
+window.mbwPip=on=>{
+  document.body.classList.toggle('pip',!!on);
+  if(on)setTimeout(()=>{if(V.paused&&V.getAttribute('src'))V.play().catch(()=>{})},250);
+};
+async function enterPip(){
+  if(!hasBridge()){msg('Pop-up player is available in the Android app');setTimeout(()=>msg(''),2500);return}
+  document.body.classList.add('pip');
+  const ok=await native('enterPip');
+  if(!ok){document.body.classList.remove('pip');msg('Picture-in-picture is not available');setTimeout(()=>msg(''),2500)}
+  pushMedia(true);
+}
 
 /* ---------- subtitles ---------- */
 let cues=[],subList=[],subSel=-2,subDelay=0,subCur=-1;   // subSel: -2 none loaded, -1 off, >=0 list idx, 'f' file
@@ -491,7 +681,7 @@ $('#subfile').addEventListener('change',async e=>{
   try{cues=parseSubs(await decodeBuf(await f.arrayBuffer()));subSel='f';subCur=-1;$('#ccb').style.opacity=1;tickSubs();if(!cues.length)msg('No subtitles found in file')}catch(err){msg('Bad subtitle file')}
   e.target.value='';renderCC();
 });
-function toggleCC(){const m=$('#cc');m.style.display=m.style.display==='block'?'none':'block';renderCC();wake()}
+function toggleCC(){const m=$('#cc');m.style.display=m.style.display==='block'?'none':'block';renderCC();hideRatioMenu();wake()}
 V.addEventListener('click',()=>{$('#cc').style.display='none'});
 /* fade the menu while dragging a slider so the live subtitle is visible */
 $('#cc').addEventListener('pointerdown',e=>{if(e.target.type==='range')$('#cc').classList.add('peek')});
@@ -514,26 +704,45 @@ async function current(){
   const s=srcs[srcIdx];if(!s){msg('No source yet');return null}
   try{if(s.rel)msg('Resolving mirror…');const r=await srcFor(s);msg('');return r}catch(e){msg(e.message);return null}
 }
+async function copyText(t){
+  try{await navigator.clipboard.writeText(t);return true}catch(e){}
+  try{
+    const a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';
+    document.body.appendChild(a);a.select();const ok=document.execCommand('copy');a.remove();return ok;
+  }catch(e){return false}
+}
 async function external(){
   const r=await current();if(!r)return;
   const path='/proxy?'+pq(r);
   if(!/Android/i.test(navigator.userAgent)){      // desktop: copy the link for VLC / mpv
-    try{await navigator.clipboard.writeText(location.origin+path);msg('Link copied. Paste it in VLC: Media > Open Network Stream')}
-    catch(e){prompt('Copy this link into VLC (Open Network Stream):',location.origin+path)}
+    if(await copyText(location.origin+path))msg('Link copied. Paste it in VLC: Media > Open Network Stream');
+    else prompt('Copy this link into VLC (Open Network Stream):',location.origin+path);
     setTimeout(()=>msg(''),4000);return;
   }
   V.pause();
   location.href='intent://'+location.host+path+'#Intent;scheme=http;type=video/*;end';
 }
-async function download(){
-  const r=await current();if(!r)return;
+function dlName(r){
   const m=(r.url.split('?')[0].match(/\.(mp4|mkv|webm|m4v|ts)$/i)||[])[1]||'mp4';
   const q=(srcs[srcIdx]||{}).quality||'';
-  const nm=cur.title+(cur._ss?` S${String(season).padStart(2,'0')}E${String(episode).padStart(2,'0')}`:'')+' '+q+'.'+m;
+  return cur.title+(cur._ss?` S${String(season).padStart(2,'0')}E${String(episode).padStart(2,'0')}`:'')+' '+q+'.'+m;
+}
+function dlUrl(r){
+  return location.origin+'/proxy?'+pq(r)+'&dl=1&name='+encodeURIComponent(dlName(r));
+}
+async function download(){
+  const r=await current();if(!r)return;
+  const nm=dlName(r);
   const a=document.createElement('a');
-  a.href='/proxy?'+pq(r)+'&dl=1&name='+encodeURIComponent(nm);a.download=nm;
+  a.href=dlUrl(r);a.download=nm;
   document.body.appendChild(a);a.click();a.remove();
   msg('Download started');setTimeout(()=>msg(''),2500);
+}
+async function copyDownload(){
+  const r=await current();if(!r)return;
+  if(await copyText(dlUrl(r)))msg('Download link copied');
+  else prompt('Copy this download link:',dlUrl(r));
+  setTimeout(()=>msg(''),2500);
 }
 
 /* ---------- suggestions / provider ---------- */
