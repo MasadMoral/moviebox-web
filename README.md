@@ -47,7 +47,7 @@ Open **http://127.0.0.1:8787** in your browser.
 Check the [Releases](https://github.com/MasadMoral/moviebox-web/releases) page for ready-made builds:
 
 - **Windows / Linux / macOS:** extract the archive, run `moviebox-web` (or `moviebox-web.exe`), then open http://127.0.0.1:8787. Linux builds are static x86_64; macOS builds are universal (Apple Silicon + Intel) and unsigned.
-- **Android:** install `moviebox-web-android-arm64.apk` (arm64, Android 8+, debug-signed for sideloading).
+- **Android:** install `moviebox-web-android-arm64.apk` (arm64, Android 7+, Picture-in-Picture needs 8+, debug-signed for sideloading).
 
 The desktop app is a local server, not a GUI window. Keep the terminal open while watching.
 

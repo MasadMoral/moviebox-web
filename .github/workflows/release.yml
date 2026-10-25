@@ -132,7 +132,7 @@ jobs:
             | Windows 10/11 (x64) | `moviebox-web-windows-x86_64.zip` |
             | Linux (x64, static musl) | `moviebox-web-linux-x86_64.tar.gz` |
             | macOS (Apple Silicon + Intel) | `moviebox-web-macos-universal.tar.gz` |
-            | Android 8+ (arm64) | `moviebox-web-android-arm64.apk` |
+            | Android 7+ (arm64) | `moviebox-web-android-arm64.apk` |
 
             The desktop builds are the local MovieBox server. Extract the archive, run the binary, then open <http://127.0.0.1:8787>.
 
