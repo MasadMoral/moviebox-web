@@ -50,11 +50,16 @@ jobs:
           android-app/patch-manifest.sh "$M"
           cat "$M"
 
+      - name: Fetch Flutter dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Patch the WebView plugin for the current Android Gradle Plugin
+        run: android-app/patch-deps.sh
+
       - name: Build the APK
         working-directory: app
-        run: |
-          flutter pub get
-          flutter build apk --release --target-platform android-arm64
+        run: flutter build apk --release --target-platform android-arm64
 
       - name: Rename the APK
         run: cp app/build/app/outputs/flutter-apk/app-release.apk moviebox-web-android-arm64.apk

@@ -28,7 +28,7 @@ Header: search + live provider suggestions, Home, Library (watch history), provi
 - Manifest additions are applied by `android-app/patch-manifest.sh` (permissions incl. POST_NOTIFICATIONS + FOREGROUND_SERVICE_DATA_SYNC, `supportsPictureInPicture`, DownloadService, MediaActionReceiver, FileProvider). Both `build-android.sh` and CI call it.
 - `build-android.sh` (repo root): cargo-ndk builds libmoviebox_web.so for arm64-v8a, `flutter create` a fresh project into `app/`, copies the overlay + .so, patches AndroidManifest (INTERNET, cleartext), builds `moviebox-web.apk`. `.github/workflows/android.yml` does the same on GitHub Actions. `app/`, `jniLibs/`, `*.apk` are gitignored.
 - `.github/workflows/release.yml`: on `v*` tags, builds Linux x86_64 static-musl, Windows x86_64, macOS universal (arm64+x86_64 via lipo), and the arm64 APK, adds SHA256SUMS, and publishes a GitHub Release. Also runnable via workflow_dispatch for build validation (publishes only for tag refs).
-- Known build issue: flutter_inappwebview_android fails with newest AGP because its build.gradle uses `proguard-android.txt`; workaround: replace with `proguard-android-optimize.txt` in ~/.pub-cache/hosted/pub.dev/flutter_inappwebview_android-*/android/build.gradle (or switch to webview_flutter).
+- Known build issue: flutter_inappwebview_android 1.1.3 references `proguard-android.txt`, which newer Android Gradle Plugin versions reject. `android-app/patch-deps.sh` rewrites it to `proguard-android-optimize.txt`; both `build-android.sh` and CI run it after `flutter pub get`.
 
 ## Run / build
 - Desktop: `cargo build --release && ./target/release/moviebox-web`, open http://127.0.0.1:8787

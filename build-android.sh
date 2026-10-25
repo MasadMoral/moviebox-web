@@ -23,7 +23,9 @@ M=app/android/app/src/main/AndroidManifest.xml
 android-app/patch-manifest.sh "$M"
 
 # 3. APK
-(cd app && flutter pub get && flutter build apk --release --target-platform android-arm64)
+(cd app && flutter pub get)
+android-app/patch-deps.sh
+(cd app && flutter build apk --release --target-platform android-arm64)
 cp app/build/app/outputs/flutter-apk/app-release.apk moviebox-web.apk
 echo
 echo "Done: $PWD/moviebox-web.apk"
