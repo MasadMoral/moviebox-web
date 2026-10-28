@@ -180,6 +180,15 @@ MovieBox occasionally renames fields or changes the "update the app" notice URL.
 
 The rules cover the detector paths/field names, dub fallback, notice patterns and accepted media extensions. `detectors_paths` and `dubs_paths` use dotted object paths; the other `*_field` values are flat keys. They **cannot** fix a new signing scheme, DRM/attestation, a new login flow, or a changed endpoint that needs different code. Those still need an app update.
 
+### Automatic API-change recovery
+
+Besides the manual rules file, the parser carries built-in **fallback field names** for the MovieBox payload shapes we have seen (`resourceDetectors[].<entries key>[]`, entry link keys, quality/size/codec/title/uploader/source/season/episode keys, …). When the configured names produce no playable releases, the app automatically probes those alternatives before giving up, so a simple rename/reshuffle upstream no longer means "no playback".
+
+- Primary configured names always win; fallbacks are only consulted when the primary key is missing/empty.
+- The parser now walks detector paths (`cfg.detector_paths()`) and entry keys (`cfg.entries_keys()`) with fallback support end-to-end.
+- New alternative names can also be added via `config/provider.json` (`*_fallbacks`) without a rebuild; the built-in defaults cover the known renames.
+- A failed lookup that uses fallbacks is a strong signal that MovieBox changed something — check `GET /api/debug/moviebox?id=...` and, if the built-in fallbacks don't cover it, add the new key to `config/provider.json` (or propose it) so the app keeps playing.
+
 ### Inspecting a MovieBox response
 
 The fastest way is the built-in debug endpoint. It uses the same session/signing path as playback and returns the raw details, play-info and resource JSON plus the releases the app parsed:

@@ -196,86 +196,140 @@ fn detector_releases_from(
     language: Option<&str>,
     cfg: &MovieBoxConfig,
 ) -> Vec<Release> {
-    let Some(detectors) = find_array(details, &cfg.detectors_paths) else {
-        return Vec::new();
-    };
     let mut out = Vec::new();
-
-    for det in detectors {
-        let det_codec = field_str(det, &cfg.codec_field);
-        let det_uploader = field_str(det, &cfg.uploader_field).unwrap_or("MovieBox");
-        let det_source = field_str(det, &cfg.source_field).unwrap_or("MovieBox");
-        let Some(entries) = det
-            .get(&cfg.resolution_list_field)
-            .and_then(Value::as_array)
-        else {
+    // Primary configured paths first, then the known fallbacks. This is what
+    // makes playback self-heal when MovieBox renames fields / restructures the
+    // payload: we probe the alternatives before giving up.
+    for detector_path in cfg.detector_paths() {
+        let Some(detectors) = find_array(details, std::slice::from_ref(&detector_path)) else {
             continue;
         };
-
-        for entry in entries {
-            let entry_se = entry.get(&cfg.season_field).and_then(json_usize);
-            let entry_ep = cfg
-                .episode_fields
-                .iter()
-                .find_map(|field| entry.get(field).and_then(json_usize));
-            if se != 0 || ep != 0 {
-                if entry_se != Some(se) || entry_ep != Some(ep) {
-                    continue;
-                }
-            }
-
-            let Some(link) = cfg.link_fields.iter().find_map(|field| {
-                entry
-                    .get(field)
-                    .and_then(Value::as_str)
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-            }) else {
+        for det in detectors {
+            let det_codec = field_str(det, &cfg.codec_field);
+            let det_uploader = field_str(det, &cfg.uploader_field).unwrap_or("MovieBox");
+            let det_source = field_str(det, &cfg.source_field)
+                .map(str::to_string)
+                .unwrap_or_else(|| {
+                    cfg.source_fields()
+                        .get(1)
+                        .and_then(|f| field_str(det, f).map(str::to_string))
+                        .unwrap_or_else(|| "MovieBox".to_string())
+                });
+            let entries = det
+                .get(&cfg.resolution_list_field)
+                .and_then(Value::as_array)
+                .or_else(|| {
+                    cfg.entries_keys()
+                        .get(1)
+                        .and_then(|k| det.get(k).and_then(Value::as_array))
+                });
+            let Some(entries) = entries else {
                 continue;
             };
-            if !is_media_url(link, cfg) {
-                continue;
-            }
 
-            let quality = entry.get(&cfg.quality_field).and_then(json_quality);
-            let codec = field_str(entry, &cfg.codec_field)
-                .map(str::to_string)
-                .or_else(|| det_codec.map(str::to_string));
-            let size_bytes = entry.get(&cfg.size_field).and_then(json_size);
-            let resource_id = cfg.resource_id_fields.iter().find_map(|field| {
-                entry.get(field).and_then(|v| {
-                    v.as_str()
-                        .map(str::to_string)
-                        .or_else(|| v.as_u64().map(|n| n.to_string()))
-                })
-            });
-            let filename = field_str(entry, &cfg.title_field)
-                .map(str::to_string)
-                .unwrap_or_else(|| match &quality {
-                    Some(q) => format!("{det_source} {q}"),
-                    None => det_source.to_string(),
+            for entry in entries {
+                let entry_se = entry
+                    .get(&cfg.season_field)
+                    .and_then(json_usize)
+                    .or_else(|| {
+                        cfg.season_fields()
+                            .get(1)
+                            .and_then(|f| entry.get(f).and_then(json_usize))
+                    });
+                let entry_ep = cfg
+                    .episode_fields()
+                    .iter()
+                    .find_map(|field| entry.get(field).and_then(json_usize))
+                    .or_else(|| {
+                        cfg.episode_fields()
+                            .get(1)
+                            .and_then(|field| entry.get(field).and_then(json_usize))
+                    });
+                if se != 0 || ep != 0 {
+                    if entry_se != Some(se) || entry_ep != Some(ep) {
+                        continue;
+                    }
+                }
+
+                let Some(link) = cfg.link_keys().iter().find_map(|field| {
+                    entry
+                        .get(field)
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                }) else {
+                    continue;
+                };
+                if !is_media_url(link, cfg) {
+                    continue;
+                }
+
+                let quality = entry
+                    .get(&cfg.quality_field)
+                    .and_then(json_quality)
+                    .or_else(|| {
+                        cfg.quality_fields()
+                            .get(1)
+                            .and_then(|f| entry.get(f).and_then(json_quality))
+                    });
+                let codec = field_str(entry, &cfg.codec_field)
+                    .map(str::to_string)
+                    .or_else(|| {
+                        cfg.codec_fields()
+                            .get(1)
+                            .and_then(|f| field_str(entry, f).map(str::to_string))
+                    })
+                    .or_else(|| det_codec.map(str::to_string));
+                let size_bytes = entry.get(&cfg.size_field).and_then(json_size).or_else(|| {
+                    cfg.size_fields()
+                        .get(1)
+                        .and_then(|f| entry.get(f).and_then(json_size))
                 });
-            let label = field_str(entry, &cfg.uploader_field)
-                .unwrap_or(det_uploader)
-                .to_string();
+                let resource_id = cfg.resource_id_fields.iter().find_map(|field| {
+                    entry.get(field).and_then(|v| {
+                        v.as_str()
+                            .map(str::to_string)
+                            .or_else(|| v.as_u64().map(|n| n.to_string()))
+                    })
+                });
+                let filename = field_str(entry, &cfg.title_field)
+                    .map(str::to_string)
+                    .or_else(|| {
+                        cfg.title_fields()
+                            .get(1)
+                            .and_then(|f| field_str(entry, f).map(str::to_string))
+                    })
+                    .unwrap_or_else(|| match &quality {
+                        Some(q) => format!("{det_source} {q}"),
+                        None => det_source.clone(),
+                    });
+                let label = field_str(entry, &cfg.uploader_field)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| {
+                        cfg.uploader_fields()
+                            .get(1)
+                            .and_then(|f| field_str(entry, f).map(str::to_string))
+                            .unwrap_or_else(|| det_uploader.to_string())
+                    });
 
-            out.push(Release {
-                provider: ProviderKind::MovieBox,
-                filename,
-                quality,
-                codec,
-                language: language.map(str::to_string),
-                size_bytes,
-                season: entry_se,
-                episode: entry_ep,
-                mirrors: vec![SourceMirror {
-                    label,
-                    resolver_url: link.to_string(),
-                    headers: vec![("User-Agent".to_string(), ua.to_string())],
-                    direct_file: true,
-                }],
-                resource_id,
-            });
+                out.push(Release {
+                    provider: ProviderKind::MovieBox,
+                    filename,
+                    quality,
+                    codec,
+                    language: language.map(str::to_string),
+                    size_bytes,
+                    season: entry_se,
+                    episode: entry_ep,
+                    mirrors: vec![SourceMirror {
+                        label,
+                        resolver_url: link.to_string(),
+                        headers: vec![("User-Agent".to_string(), ua.to_string())],
+                        direct_file: true,
+                    }],
+                    resource_id,
+                });
+            }
         }
     }
 
@@ -1065,5 +1119,36 @@ mod tests {
         assert_eq!(releases[0].filename, "Remote title");
         assert_eq!(releases[0].mirrors[0].label, "Encoder");
         assert_eq!(releases[0].codec.as_deref(), Some("hevc"));
+    }
+    #[test]
+    fn detector_parser_falls_back_to_alternative_field_names() {
+        let payload = json!({
+            "data": {
+                "resourceDetectors": [{
+                    "uploader": "uploader",
+                    "source": "source",
+                    "links": [{
+                        "season": 1, "episode": 2, "height": 1080, "bytes": "123456",
+                        "uuid": "remote-1", "name": "Remote title", "uploader": "Encoder",
+                        "file": "https://cdn.example/movie.mkv?sign=a&t=1"
+                    }]
+                }]
+            }
+        });
+
+        let releases = detector_releases_from(
+            &payload,
+            1,
+            2,
+            "TestAgent/1.0",
+            None,
+            &MovieBoxConfig::default(),
+        );
+        assert_eq!(releases.len(), 1);
+        assert_eq!(releases[0].quality.as_deref(), Some("1080p"));
+        assert_eq!(releases[0].size_bytes, Some(123456));
+        assert_eq!(releases[0].filename, "Remote title");
+        assert_eq!(releases[0].mirrors[0].label, "Encoder");
+        assert!(releases[0].mirrors[0].direct_file);
     }
 }

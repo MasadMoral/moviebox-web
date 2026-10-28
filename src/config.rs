@@ -106,6 +106,28 @@ pub struct MovieBoxConfig {
     pub notice_patterns: Vec<String>,
     /// Lowercase extensions accepted as playable media.
     pub media_extensions: Vec<String>,
+    /// Alternative detector array paths, tried after the primary ones.
+    pub detector_path_fallbacks: Vec<String>,
+    /// Alternative keys whose value is the array of resolution entries.
+    pub entries_key_fallbacks: Vec<String>,
+    /// Alternative entry keys that may hold the media link.
+    pub link_key_fallbacks: Vec<String>,
+    /// Alternative quality field names.
+    pub quality_field_fallbacks: Vec<String>,
+    /// Alternative size field names.
+    pub size_field_fallbacks: Vec<String>,
+    /// Alternative codec field names.
+    pub codec_field_fallbacks: Vec<String>,
+    /// Alternative title field names.
+    pub title_field_fallbacks: Vec<String>,
+    /// Alternative uploader field names.
+    pub uploader_field_fallbacks: Vec<String>,
+    /// Alternative source field names.
+    pub source_field_fallbacks: Vec<String>,
+    /// Alternative season field names.
+    pub season_field_fallbacks: Vec<String>,
+    /// Alternative episode field names.
+    pub episode_field_fallbacks: Vec<String>,
 }
 
 impl Default for MovieBoxConfig {
@@ -149,7 +171,201 @@ impl Default for MovieBoxConfig {
                 ".m4v".into(),
                 ".ts".into(),
             ],
+            detector_path_fallbacks: vec![],
+            entries_key_fallbacks: vec![
+                "links".into(),
+                "resolutions".into(),
+                "sources".into(),
+                "quality".into(),
+                "downloadList".into(),
+                "playbackSources".into(),
+            ],
+            link_key_fallbacks: vec![
+                "file".into(),
+                "link".into(),
+                "src".into(),
+                "source".into(),
+                "playbackUrl".into(),
+                "downloadLink".into(),
+                "download".into(),
+            ],
+            quality_field_fallbacks: vec![
+                "height".into(),
+                "quality".into(),
+                "res".into(),
+                "qualityLabel".into(),
+            ],
+            size_field_fallbacks: vec![
+                "bytes".into(),
+                "filesize".into(),
+                "length".into(),
+                "sizeBytes".into(),
+            ],
+            codec_field_fallbacks: vec!["codec".into(), "codecType".into(), "videoCodec".into()],
+            title_field_fallbacks: vec![
+                "name".into(),
+                "filename".into(),
+                "fileName".into(),
+                "displayName".into(),
+            ],
+            uploader_field_fallbacks: vec![
+                "uploader".into(),
+                "uploaderName".into(),
+                "provider".into(),
+                "addedBy".into(),
+            ],
+            source_field_fallbacks: vec![
+                "origin".into(),
+                "sourceName".into(),
+                "host".into(),
+                "cdn".into(),
+            ],
+            season_field_fallbacks: vec!["season".into(), "seasonNumber".into(), "tvSeason".into()],
+            episode_field_fallbacks: vec![
+                "episodeNumber".into(),
+                "epNumber".into(),
+                "part".into(),
+                "episode".into(),
+                "ep".into(),
+            ],
         }
+    }
+}
+
+impl MovieBoxConfig {
+    /// Detector array paths to try for a payload: the configured paths first,
+    /// then the known fallbacks. Used by the automatic API-change recovery.
+    /// then the known fallbacks. Used by the automatic API-change recovery.
+    pub fn detector_paths(&self) -> Vec<String> {
+        let mut out = self.detectors_paths.clone();
+        for path in &self.detector_path_fallbacks {
+            let p = path.trim().to_string();
+            if !p.is_empty() {
+                out.push(p);
+            }
+        }
+        out
+    }
+
+    /// Entry-array keys to try for each detector: the configured resolution
+    /// list field first, then the known fallbacks.
+    pub fn entries_keys(&self) -> Vec<String> {
+        let mut out = vec![self.resolution_list_field.trim().to_string()];
+        for key in &self.entries_key_fallbacks {
+            let k = key.trim().to_string();
+            if !k.is_empty() {
+                out.push(k);
+            }
+        }
+        out
+    }
+
+    /// Entry keys that may hold the media link, in priority order.
+    pub fn link_keys(&self) -> Vec<String> {
+        let mut out = self.link_fields.clone();
+        for key in &self.link_key_fallbacks {
+            let k = key.trim().to_string();
+            if !k.is_empty() {
+                out.push(k);
+            }
+        }
+        out
+    }
+
+    /// Quality field names to try, primary first then fallbacks.
+    pub fn quality_fields(&self) -> Vec<String> {
+        let mut out = vec![self.quality_field.trim().to_string()];
+        for field in &self.quality_field_fallbacks {
+            let f = field.trim().to_string();
+            if !f.is_empty() {
+                out.push(f);
+            }
+        }
+        out
+    }
+
+    /// Size field names to try, primary first then fallbacks.
+    pub fn size_fields(&self) -> Vec<String> {
+        let mut out = vec![self.size_field.trim().to_string()];
+        for field in &self.size_field_fallbacks {
+            let f = field.trim().to_string();
+            if !f.is_empty() {
+                out.push(f);
+            }
+        }
+        out
+    }
+
+    /// Codec field names to try, primary first then fallbacks.
+    pub fn codec_fields(&self) -> Vec<String> {
+        let mut out = vec![self.codec_field.trim().to_string()];
+        for field in &self.codec_field_fallbacks {
+            let f = field.trim().to_string();
+            if !f.is_empty() {
+                out.push(f);
+            }
+        }
+        out
+    }
+
+    /// Title field names to try, primary first then fallbacks.
+    pub fn title_fields(&self) -> Vec<String> {
+        let mut out = vec![self.title_field.trim().to_string()];
+        for field in &self.title_field_fallbacks {
+            let f = field.trim().to_string();
+            if !f.is_empty() {
+                out.push(f);
+            }
+        }
+        out
+    }
+
+    /// Uploader field names to try, primary first then fallbacks.
+    pub fn uploader_fields(&self) -> Vec<String> {
+        let mut out = vec![self.uploader_field.trim().to_string()];
+        for field in &self.uploader_field_fallbacks {
+            let f = field.trim().to_string();
+            if !f.is_empty() {
+                out.push(f);
+            }
+        }
+        out
+    }
+
+    /// Source field names to try, primary first then fallbacks.
+    pub fn source_fields(&self) -> Vec<String> {
+        let mut out = vec![self.source_field.trim().to_string()];
+        for field in &self.source_field_fallbacks {
+            let f = field.trim().to_string();
+            if !f.is_empty() {
+                out.push(f);
+            }
+        }
+        out
+    }
+
+    /// Season field names to try, primary first then fallbacks.
+    pub fn season_fields(&self) -> Vec<String> {
+        let mut out = vec![self.season_field.trim().to_string()];
+        for field in &self.season_field_fallbacks {
+            let f = field.trim().to_string();
+            if !f.is_empty() {
+                out.push(f);
+            }
+        }
+        out
+    }
+
+    /// Episode field names to try, primary first then fallbacks.
+    pub fn episode_fields(&self) -> Vec<String> {
+        let mut out = self.episode_fields.clone();
+        for field in &self.episode_field_fallbacks {
+            let f = field.trim().to_string();
+            if !f.is_empty() {
+                out.push(f);
+            }
+        }
+        out
     }
 }
 
@@ -176,9 +392,20 @@ fn normalize(cfg: &mut ProviderConfig) {
     }
     for list in [
         &mut m.detectors_paths,
+        &mut m.detector_path_fallbacks,
         &mut m.dubs_paths,
         &mut m.link_fields,
         &mut m.resource_id_fields,
+        &mut m.entries_key_fallbacks,
+        &mut m.link_key_fallbacks,
+        &mut m.quality_field_fallbacks,
+        &mut m.size_field_fallbacks,
+        &mut m.codec_field_fallbacks,
+        &mut m.title_field_fallbacks,
+        &mut m.uploader_field_fallbacks,
+        &mut m.source_field_fallbacks,
+        &mut m.season_field_fallbacks,
+        &mut m.episode_field_fallbacks,
         &mut m.episode_fields,
     ] {
         for value in list {
