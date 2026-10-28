@@ -142,6 +142,10 @@ jobs:
             - **Android:** allow installs from your browser or file manager. The APK is arm64 and debug-signed, so it is for sideloading (not Play Store). Picture-in-Picture needs Android 8+.
             - **iOS:** there is no standalone iOS build yet because the project has no iOS shell or signing setup. You can still use the web UI from Safari while the server runs on another machine.
 
+            ### Playback fix
+
+            MovieBox now resolves the real signed files instead of the short "update the app" clip, so movies play again. Series episodes that MovieBox no longer links directly show a prompt to switch to **4KHDHub** or **Dramachi**.
+
             ### Fullscreen fix
 
             Wide phones now fill the screen in fullscreen by default. Tap the **Fill** pill at the top of the fullscreen player to switch between **Fill**, **Fit**, **Stretch**, **16:9**, **4:3**, and **21:9**.

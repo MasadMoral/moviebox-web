@@ -356,6 +356,7 @@ $('#q').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch()});
 const msg=m=>{$('#vmsg').textContent=m||''};
 function friendly(e){
   const m=(e&&e.message)||String(e);
+  if(/Switch to 4KHDHub/i.test(m)){console.warn(m);return 'MovieBox has no direct link for this title. Switch to 4KHDHub or Dramachi from the provider menu (sliders icon).'}
   if(/No stream sources|Unavailable|unavailable|exhausted/i.test(m)){console.warn(m);return 'No playable stream for this episode right now. Tap Retry, try another quality or episode, or switch provider (sliders icon).'}
   return m.length>140?m.slice(0,140)+'…':m;
 }
@@ -435,7 +436,7 @@ async function loadStreams(se,ep,t){
 }
 async function srcFor(s){
   if(s._r)return s._r;
-  if(s.rel){const r=await post('/api/resolve',{rel:s.rel});s._r={url:r.url,h:r.h}}
+  if(s.rel){const r=await post('/api/resolve',{rel:s.rel,sid:s.sid,season,episode});s._r={url:r.url,h:r.h}}
   else s._r={url:s.url,h:s.h};
   return s._r;
 }
