@@ -209,6 +209,13 @@ class _HomeState extends State<Home> {
               useShouldOverrideUrlLoading: true,
               useOnDownloadStart: true,
               supportZoom: false,
+              // Keep scrolling on the WebView's own compositor and avoid
+              // drawing scrollbars/overscroll effects over the page.
+              useHybridComposition: true,
+              overScrollMode: OverScrollMode.NEVER,
+              verticalScrollBarEnabled: false,
+              horizontalScrollBarEnabled: false,
+              cacheEnabled: true,
             ),
             onWebViewCreated: (c) {
               _web = c;

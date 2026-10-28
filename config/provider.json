@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "_doc": "Remote playback rules for MovieBox. Edit and push to main; the app fetches this file at startup, every 5 minutes, and after a playback failure. The same document is bundled into the binary as a fallback.",
+  "moviebox": {
+    "detectors_paths": ["resourceDetectors", "data.resourceDetectors"],
+    "resolution_list_field": "resolutionList",
+    "link_fields": ["resourceLink", "url", "downloadUrl", "playUrl"],
+    "quality_field": "resolution",
+    "size_field": "size",
+    "codec_field": "codecName",
+    "resource_id_fields": ["resourceId", "id"],
+    "title_field": "title",
+    "uploader_field": "uploadBy",
+    "source_field": "source",
+    "season_field": "se",
+    "episode_fields": ["ep", "episode"],
+    "dubs_paths": ["dubs", "data.dubs"],
+    "dub_subject_field": "subjectId",
+    "dub_language_field": "lanName",
+    "fallback_to_dubs": true,
+    "max_dub_fallbacks": 12,
+    "notice_patterns": [
+      "/notice.mp4",
+      "macdn.aoneroom.com/other/",
+      "1c7de0bd3393702d9191801f15f88f8d",
+      "9a0461bc39da389663bf3dbb17091d3f",
+      "b164fbfb4347792950bdfbfb563d39d9"
+    ],
+    "media_extensions": [".mp4", ".m3u8", ".mpd", ".mkv", ".webm", ".m4v", ".ts"]
+  }
+}

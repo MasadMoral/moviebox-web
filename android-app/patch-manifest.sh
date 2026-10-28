@@ -12,6 +12,9 @@ if ! grep -q 'usesCleartextTraffic' "$M"; then
   sed -i 's#<application#<application android:usesCleartextTraffic="true"#' "$M"
 fi
 sed -i 's#android:label="moviebox"#android:label="MovieBox Web"#' "$M"
+if ! grep -q 'android:roundIcon' "$M"; then
+  sed -i 's#android:icon="@mipmap/ic_launcher"#android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round"#' "$M"
+fi
 
 # Permissions.
 if ! grep -q 'android.permission.INTERNET' "$M"; then

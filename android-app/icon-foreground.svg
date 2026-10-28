@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="acc" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2af0bd"/>
+      <stop offset="1" stop-color="#08a77c"/>
+    </linearGradient>
+  </defs>
+  <!-- Adaptive-icon safe zone: the mark stays inside the central 66%. -->
+  <circle cx="512" cy="512" r="286" fill="url(#acc)"/>
+  <circle cx="512" cy="512" r="272" fill="none" stroke="#ffffff" stroke-opacity=".14" stroke-width="12"/>
+  <polygon points="452,374 708,512 452,650" fill="#04201a" stroke="#04201a" stroke-width="56" stroke-linejoin="round"/>
+</svg>

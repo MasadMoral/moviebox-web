@@ -24,6 +24,7 @@ Search, browse, stream, resume, subtitles and downloads, from any browser.
 | **Providers** | MovieBox, 4KHDHub, Dramachi, CircleFTP and DhakaFlix (BDIX), switchable from the settings icon |
 | **Search** | Live suggestions from the selected provider, with posters |
 | **Playback tools** | Hold the video for 2x speed, swipe left/right for brightness/volume, fullscreen with controls (both landscape sides), Fill / Fit / Stretch and 16:9 / 4:3 / 21:9 screen modes, Picture-in-Picture, Bluetooth/headset controls, open in an external player, download with progress notification or copy the download link |
+| **Remote rules** | MovieBox field names, notice URLs and media extensions can be updated from `config/provider.json` without rebuilding |
 | **Hosting ready** | Optional password and configurable address |
 
 ## Quick start
@@ -154,6 +155,8 @@ Open **http://127.0.0.1:8787**. **External player** copies the stream link, so p
 |---|---|---|
 | `MBW_ADDR` | `127.0.0.1:8787` | Address and port to listen on |
 | `MBW_PASSWORD` | *(none)* | Enables HTTP basic auth. Use any username and this password |
+| `MBW_CONFIG_URL` | this repo's `config/provider.json` on `main` | Remote playback rules URL. Set to `off` to disable remote updates |
+| `MBW_CONFIG_CACHE` | `$XDG_CACHE_HOME/moviebox-web/provider.json` (or `~/.cache/...`) | Where the last good rules are cached |
 
 ```bash
 # Linux / macOS / Termux
@@ -165,6 +168,28 @@ $env:MBW_ADDR="0.0.0.0:8787"; $env:MBW_PASSWORD="change-me"; .\target\release\mo
 ```
 
 The page is read from `static/index.html` at runtime when that folder is next to where you run the binary. UI edits only need a browser refresh, not a rebuild.
+
+### Remote playback rules
+
+MovieBox occasionally renames fields or changes the "update the app" notice URL. The parser reads [`config/provider.json`](config/provider.json), so you can fix those changes without shipping a new app:
+
+1. Edit `config/provider.json` and push it to `main`.
+2. The app fetches it at startup and every 5 minutes in the background, so normal requests never wait for it. After a failed playback attempt it also tries a fresh copy, waiting at most 1.8 seconds.
+3. The last good copy is cached on disk. If the network or the JSON is invalid, the app keeps using that copy; if there is no cache, the copy bundled into the binary is used.
+4. Check the active version/source from the provider menu (sliders icon) or `GET /api/config`. Force a refresh with `POST /api/config/refresh`.
+
+The rules cover the detector paths/field names, dub fallback, notice patterns and accepted media extensions. `detectors_paths` and `dubs_paths` use dotted object paths; the other `*_field` values are flat keys. They **cannot** fix a new signing scheme, DRM/attestation, a new login flow, or a changed endpoint that needs different code. Those still need an app update.
+
+### Inspecting a MovieBox response
+
+The fastest way is the built-in debug endpoint. It uses the same session/signing path as playback and returns the raw details, play-info and resource JSON plus the releases the app parsed:
+
+```text
+http://127.0.0.1:8787/api/debug/moviebox?id=SUBJECT_ID
+http://127.0.0.1:8787/api/debug/moviebox?id=SUBJECT_ID&season=1&episode=1
+```
+
+Get a subject ID from `http://127.0.0.1:8787/api/search?q=title` (the `id.value` field) or from the browser Network tab. If `MBW_PASSWORD` is set, use the same password for these URLs. The response is local-only and is protected by the same auth.
 
 ---
 
@@ -239,8 +264,8 @@ The included `Dockerfile` listens on `0.0.0.0:8787` inside the container.
 | Problem | Fix |
 |---|---|
 | Build: `Permission denied` on Android | Build in `~`, not in `/storage/emulated/0/...` |
-| `No stream sources available` | MovieBox changed its API. Update with `cargo update -p moviebox-tui && cargo build --release`, or switch provider |
-| Some episodes play only the upgrade-notice clip | Upstream issue. Try another quality or provider |
+| `No stream sources available` | Check `/api/config` and `/api/debug/moviebox?id=...`; if the fields changed, update `config/provider.json` and push it. If the endpoint/signing changed, update with `cargo update -p moviebox-tui && cargo build --release`, or switch provider |
+| Some episodes play only the upgrade-notice clip | Add the new notice URL/hash to `notice_patterns` in `config/provider.json`, or try another quality/provider |
 | Video won't play in the browser (`.mkv`, `.mpd`) | Use **External player** |
 | `Address already in use` | An old copy is running. Stop it (`pkill moviebox-web` on Linux or Termux) |
 

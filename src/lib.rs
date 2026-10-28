@@ -15,6 +15,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
+mod config;
+use config::{ConfigStore, MovieBoxConfig, find_array};
+
 const INDEX: &str = include_str!("../static/index.html");
 
 // Serve static/index.html from disk when present (UI edits need no rebuild)
@@ -58,6 +61,7 @@ async fn auth(req: Request<Body>, next: Next) -> Response {
 struct App {
     svc: Arc<MovieBoxService>,
     http: reqwest::Client,
+    cfg: Arc<ConfigStore>,
 }
 
 type Res = Result<Json<Value>, (StatusCode, String)>;
@@ -102,6 +106,12 @@ struct ProxyQ {
     /// base64(json [[k,v],...])
     h: Option<String>,
 }
+#[derive(Deserialize)]
+struct DebugQ {
+    id: String,
+    season: Option<usize>,
+    episode: Option<usize>,
+}
 
 async fn search(State(a): State<App>, Query(q): Query<SearchQ>) -> Res {
     let items = a
@@ -128,22 +138,29 @@ async fn details(State(a): State<App>, Query(q): Query<IdQ>) -> Res {
 
 /// Upstream sometimes answers with a short "update the app" clip instead of
 /// the media. Never offer that clip as a playable source.
-fn is_notice_url(url: &str) -> bool {
+fn is_notice_url(url: &str, cfg: &MovieBoxConfig) -> bool {
     let u = url.to_ascii_lowercase();
-    u.contains("/notice.mp4")
-        || (u.contains("macdn.aoneroom.com") && u.contains("/other/"))
-        || u.contains("1c7de0bd3393702d9191801f15f88f8d")
-        || u.contains("9a0461bc39da389663bf3dbb17091d3f")
-        || u.contains("b164fbfb4347792950bdfbfb563d39d9")
+    cfg.notice_patterns
+        .iter()
+        .any(|pattern| !pattern.is_empty() && u.contains(pattern.as_str()))
 }
 
-fn is_media_url(url: &str) -> bool {
+fn is_media_url(url: &str, cfg: &MovieBoxConfig) -> bool {
     let u = url.to_ascii_lowercase();
     u.starts_with("http")
-        && !is_notice_url(url)
-        && [".mp4", ".m3u8", ".mpd", ".mkv", ".webm", ".m4v", ".ts"]
+        && !is_notice_url(url, cfg)
+        && cfg
+            .media_extensions
             .iter()
-            .any(|ext| u.contains(ext))
+            .any(|ext| !ext.is_empty() && u.contains(ext.as_str()))
+}
+
+fn field_str<'a>(value: &'a Value, field: &str) -> Option<&'a str> {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
 }
 
 fn json_usize(v: &Value) -> Option<usize> {
@@ -177,92 +194,68 @@ fn detector_releases_from(
     ep: usize,
     ua: &str,
     language: Option<&str>,
+    cfg: &MovieBoxConfig,
 ) -> Vec<Release> {
-    let data = details.get("data").unwrap_or(details);
-    let Some(detectors) = data.get("resourceDetectors").and_then(Value::as_array) else {
+    let Some(detectors) = find_array(details, &cfg.detectors_paths) else {
         return Vec::new();
     };
     let mut out = Vec::new();
 
     for det in detectors {
-        let det_codec = det
-            .get("codecName")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|s| !s.is_empty());
-        let det_uploader = det
-            .get("uploadBy")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .unwrap_or("MovieBox");
-        let det_source = det
-            .get("source")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .unwrap_or("MovieBox");
-        let Some(entries) = det.get("resolutionList").and_then(Value::as_array) else {
+        let det_codec = field_str(det, &cfg.codec_field);
+        let det_uploader = field_str(det, &cfg.uploader_field).unwrap_or("MovieBox");
+        let det_source = field_str(det, &cfg.source_field).unwrap_or("MovieBox");
+        let Some(entries) = det
+            .get(&cfg.resolution_list_field)
+            .and_then(Value::as_array)
+        else {
             continue;
         };
 
         for entry in entries {
-            let entry_se = entry.get("se").and_then(json_usize);
-            let entry_ep = entry
-                .get("ep")
-                .or_else(|| entry.get("episode"))
-                .and_then(json_usize);
+            let entry_se = entry.get(&cfg.season_field).and_then(json_usize);
+            let entry_ep = cfg
+                .episode_fields
+                .iter()
+                .find_map(|field| entry.get(field).and_then(json_usize));
             if se != 0 || ep != 0 {
                 if entry_se != Some(se) || entry_ep != Some(ep) {
                     continue;
                 }
             }
 
-            let Some(link) = entry
-                .get("resourceLink")
-                .or_else(|| entry.get("url"))
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-            else {
+            let Some(link) = cfg.link_fields.iter().find_map(|field| {
+                entry
+                    .get(field)
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+            }) else {
                 continue;
             };
-            if !is_media_url(link) {
+            if !is_media_url(link, cfg) {
                 continue;
             }
 
-            let quality = entry.get("resolution").and_then(json_quality);
-            let codec = entry
-                .get("codecName")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
+            let quality = entry.get(&cfg.quality_field).and_then(json_quality);
+            let codec = field_str(entry, &cfg.codec_field)
                 .map(str::to_string)
                 .or_else(|| det_codec.map(str::to_string));
-            let size_bytes = entry.get("size").and_then(json_size);
-            let resource_id = entry
-                .get("resourceId")
-                .or_else(|| entry.get("id"))
-                .and_then(|v| {
+            let size_bytes = entry.get(&cfg.size_field).and_then(json_size);
+            let resource_id = cfg.resource_id_fields.iter().find_map(|field| {
+                entry.get(field).and_then(|v| {
                     v.as_str()
                         .map(str::to_string)
                         .or_else(|| v.as_u64().map(|n| n.to_string()))
-                });
-            let filename = entry
-                .get("title")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
+                })
+            });
+            let filename = field_str(entry, &cfg.title_field)
                 .map(str::to_string)
                 .unwrap_or_else(|| match &quality {
                     Some(q) => format!("{det_source} {q}"),
                     None => det_source.to_string(),
                 });
-            let label = entry
-                .get("uploadBy")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
+            let label = field_str(entry, &cfg.uploader_field)
                 .unwrap_or(det_uploader)
                 .to_string();
 
@@ -306,22 +299,25 @@ fn detector_releases_from(
 /// result) have no detector links of their own. Their `dubs` list points at the
 /// per-language subjects that do, so try those before giving up and label the
 /// releases with the dub language.
-async fn moviebox_detector_releases(a: &App, id: &str, se: usize, ep: usize) -> Vec<Release> {
-    let ua = a.svc.client.user_agent().to_string();
-    let Ok(details) = a.svc.client.get_details(id).await else {
-        return Vec::new();
-    };
-    let out = detector_releases_from(&details, se, ep, &ua, None);
-    if !out.is_empty() || se != 0 || ep != 0 {
+async fn detector_releases_with_cfg(
+    a: &App,
+    details: &Value,
+    id: &str,
+    se: usize,
+    ep: usize,
+    ua: &str,
+    cfg: &MovieBoxConfig,
+) -> Vec<Release> {
+    let out = detector_releases_from(details, se, ep, ua, None, cfg);
+    if !out.is_empty() || se != 0 || ep != 0 || !cfg.fallback_to_dubs {
         return out;
     }
 
-    let data = details.get("data").unwrap_or(&details);
-    let Some(dubs) = data.get("dubs").and_then(Value::as_array) else {
+    let Some(dubs) = find_array(details, &cfg.dubs_paths) else {
         return out;
     };
-    for dub in dubs {
-        let Some(sid) = dub.get("subjectId").and_then(Value::as_str) else {
+    for dub in dubs.iter().take(cfg.max_dub_fallbacks.min(50)) {
+        let Some(sid) = dub.get(&cfg.dub_subject_field).and_then(Value::as_str) else {
             continue;
         };
         if sid.is_empty() || sid == id {
@@ -331,13 +327,38 @@ async fn moviebox_detector_releases(a: &App, id: &str, se: usize, ep: usize) -> 
             continue;
         };
         let language = dub
-            .get("lanName")
+            .get(&cfg.dub_language_field)
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|s| !s.is_empty());
-        let rels = detector_releases_from(&d, se, ep, &ua, language);
+        let rels = detector_releases_from(&d, se, ep, ua, language, cfg);
         if !rels.is_empty() {
             return rels;
+        }
+    }
+    out
+}
+
+async fn moviebox_detector_releases(a: &App, id: &str, se: usize, ep: usize) -> Vec<Release> {
+    let ua = a.svc.client.user_agent().to_string();
+    a.cfg.maybe_refresh();
+    let cfg = a.cfg.current();
+
+    let Ok(details) = a.svc.client.get_details(id).await else {
+        return Vec::new();
+    };
+    let out = detector_releases_with_cfg(a, &details, id, se, ep, &ua, &cfg.moviebox).await;
+    if !out.is_empty() || se != 0 || ep != 0 {
+        return out;
+    }
+
+    // No links at all. The remote rules may be stale; fetch them once without
+    // blocking normal playback for more than a moment, then re-parse the same
+    // details payload (no extra MovieBox request).
+    if a.cfg.stale() && a.cfg.refresh_now().await {
+        let fresh = a.cfg.current();
+        if !Arc::ptr_eq(&cfg, &fresh) {
+            return detector_releases_with_cfg(a, &details, id, se, ep, &ua, &fresh.moviebox).await;
         }
     }
     out
@@ -695,6 +716,47 @@ async fn providers() -> Json<Value> {
     ))
 }
 
+async fn config_info(State(a): State<App>) -> Json<Value> {
+    Json(a.cfg.info())
+}
+
+async fn config_refresh(State(a): State<App>) -> Json<Value> {
+    let _ = a.cfg.refresh_now().await;
+    Json(a.cfg.info())
+}
+
+/// The quickest way to see what the app actually receives from MovieBox.
+/// Open this in a browser while the server is running:
+/// `/api/debug/moviebox?id=SUBJECT_ID&season=1&episode=1`
+async fn debug_moviebox(State(a): State<App>, Query(q): Query<DebugQ>) -> Res {
+    let se = q.season.unwrap_or(0);
+    let ep = q.episode.unwrap_or(0);
+    let details = a.svc.client.get_details(&q.id).await.map_err(err)?;
+    let play_info = a.svc.client.get_play_info(&q.id, se, ep).await;
+    let resources = a.svc.client.get_resources(&q.id, se, ep, 1, None, 20).await;
+    let cfg = a.cfg.current();
+    let parsed = detector_releases_from(
+        &details,
+        se,
+        ep,
+        a.svc.client.user_agent(),
+        None,
+        &cfg.moviebox,
+    );
+    Ok(Json(json!({
+        "id": q.id,
+        "season": se,
+        "episode": ep,
+        "config_version": cfg.version,
+        "details": details,
+        "play_info": play_info.as_ref().ok(),
+        "play_info_error": play_info.as_ref().err().map(ToString::to_string),
+        "resources": resources.as_ref().ok(),
+        "resources_error": resources.as_ref().err().map(ToString::to_string),
+        "parsed_releases": serde_json::to_value(&parsed).unwrap_or(Value::Null),
+    })))
+}
+
 #[derive(Deserialize)]
 struct SugQ {
     q: String,
@@ -798,6 +860,10 @@ pub async fn serve(addr: String, wait_init: bool) -> std::io::Result<()> {
         });
     }
     let http = reqwest::Client::builder().build().unwrap();
+    let cfg = Arc::new(ConfigStore::new());
+    // Fetch rules in the background; startup and requests keep using the
+    // bundled/cached copy, so a slow network never delays the app.
+    cfg.maybe_refresh();
     let app = Router::new()
         .route("/", get(index))
         .route("/api/search", get(search))
@@ -805,11 +871,14 @@ pub async fn serve(addr: String, wait_init: bool) -> std::io::Result<()> {
         .route("/api/details", get(details))
         .route("/api/streams", get(streams))
         .route("/api/providers", get(providers))
+        .route("/api/config", get(config_info))
+        .route("/api/config/refresh", post(config_refresh))
+        .route("/api/debug/moviebox", get(debug_moviebox))
         .route("/api/subs", get(subs))
         .route("/api/resolve", post(resolve))
         .route("/api/suggest", get(suggest))
         .route("/proxy", get(proxy))
-        .with_state(App { svc, http });
+        .with_state(App { svc, http, cfg });
     // optional MBW_PASSWORD (HTTP basic auth, any username)
     let app = app.layer(middleware::from_fn(auth));
     if std::env::var("MBW_PASSWORD").is_ok() {
@@ -901,7 +970,14 @@ mod tests {
             }
         });
 
-        let releases = detector_releases_from(&payload, 0, 0, "TestAgent/1.0", None);
+        let releases = detector_releases_from(
+            &payload,
+            0,
+            0,
+            "TestAgent/1.0",
+            None,
+            &MovieBoxConfig::default(),
+        );
         assert_eq!(releases.len(), 1);
         assert_eq!(releases[0].quality.as_deref(), Some("720p"));
         assert_eq!(releases[0].size_bytes, Some(1_809_858_130));
@@ -933,10 +1009,61 @@ mod tests {
             }
         });
 
-        let releases = detector_releases_from(&payload, 1, 2, "TestAgent/1.0", None);
+        let releases = detector_releases_from(
+            &payload,
+            1,
+            2,
+            "TestAgent/1.0",
+            None,
+            &MovieBoxConfig::default(),
+        );
         assert_eq!(releases.len(), 1);
         assert_eq!(releases[0].resource_id.as_deref(), Some("222"));
         assert_eq!(releases[0].season, Some(1));
         assert_eq!(releases[0].episode, Some(2));
+    }
+
+    #[test]
+    fn detector_parser_follows_remote_rule_names() {
+        let payload = json!({
+            "result": {
+                "rows": [{
+                    "codec": "hevc",
+                    "uploader": "AnotherUploader",
+                    "origin": "MirrorSite",
+                    "links": [{
+                        "file": "https://cdn.example/movie.mkv?sign=a&t=1",
+                        "height": 1080,
+                        "bytes": "123456",
+                        "uuid": "remote-1",
+                        "name": "Remote title",
+                        "uploader": "Encoder"
+                    }]
+                }]
+            }
+        });
+
+        let mut rules = MovieBoxConfig::default();
+        rules.detectors_paths = vec!["result.rows".into()];
+        rules.resolution_list_field = "links".into();
+        rules.link_fields = vec!["file".into()];
+        rules.quality_field = "height".into();
+        rules.size_field = "bytes".into();
+        rules.codec_field = "codec".into();
+        rules.resource_id_fields = vec!["uuid".into()];
+        rules.title_field = "name".into();
+        rules.uploader_field = "uploader".into();
+        rules.season_field = "season".into();
+        rules.episode_fields = vec!["part".into()];
+        rules.media_extensions = vec![".mkv".into()];
+
+        let releases = detector_releases_from(&payload, 0, 0, "TestAgent/1.0", None, &rules);
+        assert_eq!(releases.len(), 1);
+        assert_eq!(releases[0].quality.as_deref(), Some("1080p"));
+        assert_eq!(releases[0].size_bytes, Some(123456));
+        assert_eq!(releases[0].resource_id.as_deref(), Some("remote-1"));
+        assert_eq!(releases[0].filename, "Remote title");
+        assert_eq!(releases[0].mirrors[0].label, "Encoder");
+        assert_eq!(releases[0].codec.as_deref(), Some("hevc"));
     }
 }
