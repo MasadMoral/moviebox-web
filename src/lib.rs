@@ -393,6 +393,276 @@ async fn detector_releases_with_cfg(
     out
 }
 
+/// MovieBox's web player endpoint still returns the real episode files when the
+/// native `play-info`/`resource` APIs only send the upgrade-notice clip. This
+/// is what makes series playback work. It needs the visitor token, a matching
+/// `Referer`, and the subject's `detailPath`.
+const WEB_PLAY_UA: &str = "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36";
+
+fn moviebox_detail_path(details: &Value) -> Option<String> {
+    details
+        .get("detailPath")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            details
+                .get("detailUrl")
+                .and_then(Value::as_str)
+                .and_then(|u| u.split('?').next())
+                .map(|u| u.trim_end_matches('/'))
+                .and_then(|u| u.rsplit('/').next())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+        })
+}
+
+fn quality_from_resolutions(v: &Value) -> Option<String> {
+    if let Some(s) = v.as_str() {
+        if let Some(best) = s
+            .split(',')
+            .filter_map(|part| part.trim().parse::<u32>().ok())
+            .max()
+        {
+            return Some(format!("{best}p"));
+        }
+    }
+    json_quality(v)
+}
+
+fn web_play_release(
+    out: &mut Vec<Release>,
+    item: &Value,
+    title: &str,
+    se: usize,
+    ep: usize,
+    language: Option<&str>,
+    domain: &str,
+    dash: bool,
+    cfg: &MovieBoxConfig,
+) {
+    let Some(url) = item
+        .get("url")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|u| u.starts_with("http"))
+    else {
+        return;
+    };
+    if is_notice_url(url, cfg) {
+        return;
+    }
+    let quality = item
+        .get("resolutions")
+        .or_else(|| item.get("resolution"))
+        .and_then(quality_from_resolutions);
+    let codec = item
+        .get("codecName")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let size_bytes = item.get("size").and_then(json_size);
+    let resource_id = item.get("id").map(|v| {
+        v.as_str()
+            .map(str::to_string)
+            .unwrap_or_else(|| v.to_string())
+    });
+    let filename = match &quality {
+        Some(q) => format!("{title} {q}"),
+        None => title.to_string(),
+    };
+    out.push(Release {
+        provider: ProviderKind::MovieBox,
+        filename,
+        quality,
+        codec,
+        language: language.map(str::to_string),
+        size_bytes,
+        season: (se != 0).then_some(se),
+        episode: (ep != 0).then_some(ep),
+        mirrors: vec![SourceMirror {
+            label: if dash {
+                "MovieBox DASH"
+            } else {
+                "MovieBox Web"
+            }
+            .to_string(),
+            resolver_url: url.to_string(),
+            headers: vec![
+                ("User-Agent".to_string(), WEB_PLAY_UA.to_string()),
+                ("Referer".to_string(), format!("{domain}/")),
+            ],
+            direct_file: true,
+        }],
+        resource_id,
+    });
+}
+
+fn web_play_payload_releases(
+    payload: &Value,
+    details: &Value,
+    se: usize,
+    ep: usize,
+    language: Option<&str>,
+    domain: &str,
+    cfg: &MovieBoxConfig,
+) -> Vec<Release> {
+    let data = payload.get("data").unwrap_or(payload);
+    let title = details
+        .get("title")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("MovieBox");
+    let mut out = Vec::new();
+    let mut mp4 = 0usize;
+    for item in data
+        .get("streams")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let before = out.len();
+        web_play_release(&mut out, item, title, se, ep, language, domain, false, cfg);
+        if out.len() > before {
+            mp4 += 1;
+        }
+    }
+    // DASH is a last resort: browsers cannot play .mpd, but external players can.
+    if mp4 == 0 {
+        for item in data
+            .get("dash")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            web_play_release(&mut out, item, title, se, ep, language, domain, true, cfg);
+        }
+    }
+    out.sort_by(|x, y| {
+        y.resolution_u64()
+            .cmp(&x.resolution_u64())
+            .then_with(|| y.size_bytes.cmp(&x.size_bytes))
+    });
+    out.dedup_by(|x, y| x.quality == y.quality && x.size_bytes == y.size_bytes);
+    out
+}
+
+async fn web_play_for(
+    a: &App,
+    details: &Value,
+    se: usize,
+    ep: usize,
+    language: Option<&str>,
+    cfg: &MovieBoxConfig,
+) -> Vec<Release> {
+    if !cfg.web_play {
+        return Vec::new();
+    }
+    let Some(subject_id) = details.get("subjectId").and_then(Value::as_str) else {
+        return Vec::new();
+    };
+    let Some(detail_path) = moviebox_detail_path(details) else {
+        return Vec::new();
+    };
+    let Ok(token) = a.svc.client.ensure_session().await else {
+        return Vec::new();
+    };
+
+    for domain in &cfg.web_play_domains {
+        let Ok(mut url) = reqwest::Url::parse(&format!("{domain}{}", cfg.web_play_path)) else {
+            continue;
+        };
+        url.query_pairs_mut()
+            .append_pair("subjectId", subject_id)
+            .append_pair("detailPath", &detail_path)
+            .append_pair("streamSignType", "1")
+            .append_pair("supportCodecs[hevc]", "1")
+            .append_pair("supportCodecs[h264]", "1");
+        if se != 0 {
+            url.query_pairs_mut().append_pair("se", &se.to_string());
+        }
+        if ep != 0 {
+            url.query_pairs_mut().append_pair("ep", &ep.to_string());
+        }
+        let referer =
+            format!("{domain}/movies/{detail_path}?id={subject_id}&type=/movie/detail&lang=en");
+        let response = a
+            .svc
+            .client
+            .http_client()
+            .get(url)
+            .header("User-Agent", WEB_PLAY_UA)
+            .header("Authorization", format!("Bearer {token}"))
+            .header("Referer", referer)
+            .header("Accept", "application/json")
+            .timeout(std::time::Duration::from_secs(8))
+            .send()
+            .await;
+        let Ok(response) = response else {
+            continue;
+        };
+        if !response.status().is_success() {
+            continue;
+        }
+        let Ok(payload) = response.json::<Value>().await else {
+            continue;
+        };
+        let releases = web_play_payload_releases(&payload, details, se, ep, language, domain, cfg);
+        if !releases.is_empty() {
+            return releases;
+        }
+        // A successful reply with no streams means the episode is locked, not
+        // that the host is down. Do not hammer the other domains.
+        break;
+    }
+    Vec::new()
+}
+
+/// Fetch real series/episode files through the web player, falling back to the
+/// original-audio dub subject when the localized subject has no streams.
+async fn moviebox_web_releases(a: &App, id: &str, se: usize, ep: usize) -> Vec<Release> {
+    a.cfg.maybe_refresh();
+    let cfg = a.cfg.current();
+    let details = match a.svc.client.get_details(id).await {
+        Ok(details) => details,
+        Err(_) => return Vec::new(),
+    };
+    let out = web_play_for(a, &details, se, ep, None, &cfg.moviebox).await;
+    if !out.is_empty() || !cfg.moviebox.fallback_to_dubs {
+        return out;
+    }
+
+    let Some(dubs) = find_array(&details, &cfg.moviebox.dubs_paths) else {
+        return out;
+    };
+    for dub in dubs.iter().take(cfg.moviebox.max_dub_fallbacks.min(6)) {
+        let Some(sid) = dub
+            .get(&cfg.moviebox.dub_subject_field)
+            .and_then(Value::as_str)
+        else {
+            continue;
+        };
+        if sid.is_empty() || sid == id {
+            continue;
+        }
+        let Ok(dub_details) = a.svc.client.get_details(sid).await else {
+            continue;
+        };
+        let language = dub
+            .get(&cfg.moviebox.dub_language_field)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let releases = web_play_for(a, &dub_details, se, ep, language, &cfg.moviebox).await;
+        if !releases.is_empty() {
+            return releases;
+        }
+    }
+    out
+}
+
 async fn moviebox_detector_releases(a: &App, id: &str, se: usize, ep: usize) -> Vec<Release> {
     let ua = a.svc.client.user_agent().to_string();
     a.cfg.maybe_refresh();
@@ -538,6 +808,13 @@ async fn fetch_releases(
                 return Ok(detector);
             }
 
+            // Native play-info/resource still return the upgrade clip for
+            // series. The web player endpoint has the real files.
+            let web = moviebox_web_releases(a, id, se, ep).await;
+            if !web.is_empty() {
+                return Ok(web);
+            }
+
             let main = s.client.episode_streams(id, se, ep).await;
             // resolutions we already have as real (non-DASH) files
             let have: std::collections::HashSet<String> = main
@@ -680,13 +957,22 @@ async fn resolve(State(a): State<App>, Json(b): Json<ResolveIn>) -> Res {
 
     if rel.provider == ProviderKind::MovieBox {
         if let Some(sid) = b.sid.as_deref().filter(|s| !s.is_empty()) {
-            let fresh =
-                moviebox_detector_releases(&a, sid, b.season.unwrap_or(0), b.episode.unwrap_or(0))
-                    .await;
-            let found = fresh.iter().find(|r| {
+            let se = b.season.unwrap_or(0);
+            let ep = b.episode.unwrap_or(0);
+            let same_release = |r: &Release| {
                 (rel.resource_id.is_some() && r.resource_id == rel.resource_id)
                     || (r.quality == rel.quality && r.size_bytes == rel.size_bytes)
-            });
+            };
+            let fresh = moviebox_detector_releases(&a, sid, se, ep).await;
+            let web = if fresh.iter().any(|r| same_release(r)) {
+                Vec::new()
+            } else {
+                moviebox_web_releases(&a, sid, se, ep).await
+            };
+            let found = fresh
+                .iter()
+                .find(|r| same_release(r))
+                .or_else(|| web.iter().find(|r| same_release(r)));
             if let Some(found) = found {
                 let m = found.mirrors.first().ok_or_else(|| err("no mirror"))?;
                 let h = serde_json::to_vec(&m.headers).map_err(err)?;
@@ -797,6 +1083,69 @@ async fn debug_moviebox(State(a): State<App>, Query(q): Query<DebugQ>) -> Res {
         None,
         &cfg.moviebox,
     );
+    // For series the detector payload often has an empty resolutionList; the
+    // real episode links live behind resource-position. Probe every resolution
+    // so a failed episode can be diagnosed from the browser.
+    let mut resource_probes = Vec::new();
+    if se != 0 || ep != 0 {
+        let resolutions = a
+            .svc
+            .client
+            .fetch_collection_resolutions(&q.id)
+            .await
+            .unwrap_or_default();
+        for resolution in resolutions {
+            let probe = match a
+                .svc
+                .client
+                .fetch_resource_page(&q.id, se, ep, resolution, 1)
+                .await
+            {
+                Ok((items, pager)) => {
+                    let mut matches = Vec::new();
+                    for item in items.iter().filter(|item| {
+                        use moviebox_tui::providers::moviebox::adapt;
+                        let rel = adapt::moviebox_resource_item_to_release(item);
+                        rel.season == Some(se) && rel.episode == Some(ep)
+                    }) {
+                        let rid = item
+                            .get("resourceId")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string();
+                        let origin = item
+                            .get("resourceLink")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string();
+                        let recovered = if rid.is_empty() || origin.is_empty() {
+                            Value::Null
+                        } else {
+                            match a
+                                .svc
+                                .client
+                                .get_resource_position(&q.id, &rid, &origin)
+                                .await
+                            {
+                                Ok(payload) => payload,
+                                Err(e) => json!({"error": e.to_string()}),
+                            }
+                        };
+                        matches.push(json!({"item": item, "recovered": recovered}));
+                    }
+                    json!({
+                        "resolution": resolution,
+                        "page_items": items.len(),
+                        "pager": pager,
+                        "matches": matches,
+                    })
+                }
+                Err(e) => json!({"resolution": resolution, "error": e.to_string()}),
+            };
+            resource_probes.push(probe);
+        }
+    }
+    let web_releases = moviebox_web_releases(&a, &q.id, se, ep).await;
     Ok(Json(json!({
         "id": q.id,
         "season": se,
@@ -808,6 +1157,8 @@ async fn debug_moviebox(State(a): State<App>, Query(q): Query<DebugQ>) -> Res {
         "resources": resources.as_ref().ok(),
         "resources_error": resources.as_ref().err().map(ToString::to_string),
         "parsed_releases": serde_json::to_value(&parsed).unwrap_or(Value::Null),
+        "web_play_releases": serde_json::to_value(&web_releases).unwrap_or(Value::Null),
+        "resource_probes": resource_probes,
     })))
 }
 
@@ -1150,5 +1501,73 @@ mod tests {
         assert_eq!(releases[0].filename, "Remote title");
         assert_eq!(releases[0].mirrors[0].label, "Encoder");
         assert!(releases[0].mirrors[0].direct_file);
+    }
+
+    #[test]
+    fn web_play_parser_extracts_series_episode_streams() {
+        let details = json!({
+            "title": "Example Show",
+            "subjectId": "123",
+            "detailUrl": "https://movie-box.co/detail/example-show-abc"
+        });
+        let payload = json!({
+            "code": 0,
+            "data": {
+                "streams": [
+                    {
+                        "id": "1",
+                        "url": "https://bcdn.hakunaymatata.com/sd.mp4?sign=x",
+                        "resolutions": "360",
+                        "size": "1000",
+                        "codecName": "h264"
+                    },
+                    {
+                        "id": "2",
+                        "url": "https://bcdn.hakunaymatata.com/hd.mp4?sign=y",
+                        "resolutions": "1080",
+                        "size": "2000",
+                        "codecName": "h264"
+                    },
+                    {
+                        "id": "3",
+                        "url": "https://macdn.aoneroom.com/other/notice.mp4",
+                        "resolutions": "480",
+                        "size": "5"
+                    }
+                ],
+                "dash": [{
+                    "url": "https://cdn.example/index.mpd",
+                    "resolutions": "1080,720,480",
+                    "size": "3000"
+                }]
+            }
+        });
+
+        let releases = web_play_payload_releases(
+            &payload,
+            &details,
+            1,
+            2,
+            None,
+            "https://movie-box.co",
+            &MovieBoxConfig::default(),
+        );
+        assert_eq!(releases.len(), 2);
+        assert_eq!(releases[0].quality.as_deref(), Some("1080p"));
+        assert_eq!(releases[0].size_bytes, Some(2000));
+        assert_eq!(releases[0].season, Some(1));
+        assert_eq!(releases[0].episode, Some(2));
+        assert_eq!(releases[0].mirrors[0].label, "MovieBox Web");
+        assert!(releases[0].mirrors[0].direct_file);
+        assert_eq!(releases[0].mirrors[0].headers[1].0, "Referer");
+        assert!(
+            releases
+                .iter()
+                .all(|r| !r.mirrors[0].resolver_url.contains("macdn.aoneroom.com"))
+        );
+        assert_eq!(
+            moviebox_detail_path(&details).as_deref(),
+            Some("example-show-abc")
+        );
     }
 }

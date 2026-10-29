@@ -180,6 +180,12 @@ MovieBox occasionally renames fields or changes the "update the app" notice URL.
 
 The rules cover the detector paths/field names, dub fallback, notice patterns and accepted media extensions. `detectors_paths` and `dubs_paths` use dotted object paths; the other `*_field` values are flat keys. They **cannot** fix a new signing scheme, DRM/attestation, a new login flow, or a changed endpoint that needs different code. Those still need an app update.
 
+### Series playback
+
+MovieBox's native `play-info` and `resource` APIs currently return only the 23-second upgrade clip for series episodes, and `resource-position` comes back with an empty list. The app therefore falls back to MovieBox's **web player endpoint** (`web_play_path` on the hosts in `web_play_domains`) using the visitor token and the subject's `detailPath`. If the localized subject has no streams, it retries the original-audio/dub subjects from `dubs`. Set `"web_play": false` in `config/provider.json` to disable this fallback.
+
+Both the endpoint and the host list are remote-configurable, so a domain change can be fixed without rebuilding. The web player returns signed MP4 links; playback and downloads still go through the normal `/proxy`.
+
 ### Automatic API-change recovery
 
 Besides the manual rules file, the parser carries built-in **fallback field names** for the MovieBox payload shapes we have seen (`resourceDetectors[].<entries key>[]`, entry link keys, quality/size/codec/title/uploader/source/season/episode keys, …). When the configured names produce no playable releases, the app automatically probes those alternatives before giving up, so a simple rename/reshuffle upstream no longer means "no playback".
@@ -191,7 +197,7 @@ Besides the manual rules file, the parser carries built-in **fallback field name
 
 ### Inspecting a MovieBox response
 
-The fastest way is the built-in debug endpoint. It uses the same session/signing path as playback and returns the raw details, play-info and resource JSON plus the releases the app parsed:
+The fastest way is the built-in debug endpoint. On the page, open the provider menu (sliders icon) and choose **Inspect MovieBox response**; it opens the same endpoint for the current title/episode. It uses the same session/signing path as playback and returns the raw details, play-info and resource JSON plus the releases the app parsed from the detector and the web player (`parsed_releases`, `web_play_releases`). For episodes it also probes every resolution through `resource-position` (`resource_probes`):
 
 ```text
 http://127.0.0.1:8787/api/debug/moviebox?id=SUBJECT_ID
@@ -274,6 +280,7 @@ The included `Dockerfile` listens on `0.0.0.0:8787` inside the container.
 |---|---|
 | Build: `Permission denied` on Android | Build in `~`, not in `/storage/emulated/0/...` |
 | `No stream sources available` | Check `/api/config` and `/api/debug/moviebox?id=...`; if the fields changed, update `config/provider.json` and push it. If the endpoint/signing changed, update with `cargo update -p moviebox-tui && cargo build --release`, or switch provider |
+| Series says `MovieBox has no direct link for this episode` | Check `/api/debug/moviebox?id=...&season=1&episode=1`: `web_play_releases` should list MP4s. If it does not, inspect `web_play_domains`/`web_play_path` in `config/provider.json` and the raw `detailPath`. If the web endpoint changed, update the rules; if it is gone, switch provider or update the app |
 | Some episodes play only the upgrade-notice clip | Add the new notice URL/hash to `notice_patterns` in `config/provider.json`, or try another quality/provider |
 | Video won't play in the browser (`.mkv`, `.mpd`) | Use **External player** |
 | `Address already in use` | An old copy is running. Stop it (`pkill moviebox-web` on Linux or Termux) |

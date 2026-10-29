@@ -74,6 +74,16 @@ impl ProviderConfig {
         if m.media_extensions.is_empty() || m.media_extensions.iter().any(|p| p.trim().is_empty()) {
             return Err("moviebox.media_extensions must contain at least one extension".into());
         }
+        if m.web_play {
+            if m.web_play_domains.is_empty()
+                || m.web_play_domains.iter().any(|d| !d.starts_with("http"))
+            {
+                return Err("moviebox.web_play_domains must contain http(s) hosts".into());
+            }
+            if !m.web_play_path.starts_with('/') {
+                return Err("moviebox.web_play_path must start with /".into());
+            }
+        }
         Ok(())
     }
 }
@@ -128,6 +138,13 @@ pub struct MovieBoxConfig {
     pub season_field_fallbacks: Vec<String>,
     /// Alternative episode field names.
     pub episode_field_fallbacks: Vec<String>,
+    /// Use the web playback endpoint when the native detector/native stream
+    /// APIs only return the upgrade-notice clip (currently required for series).
+    pub web_play: bool,
+    /// Hosts that expose the web playback endpoint, tried in order.
+    pub web_play_domains: Vec<String>,
+    /// Path of the web playback endpoint.
+    pub web_play_path: String,
 }
 
 impl Default for MovieBoxConfig {
@@ -228,6 +245,14 @@ impl Default for MovieBoxConfig {
                 "episode".into(),
                 "ep".into(),
             ],
+            web_play: true,
+            web_play_domains: vec![
+                "https://movie-box.co".into(),
+                "https://h5-api.aoneroom.com".into(),
+                "https://moviebox.ph".into(),
+                "https://movieboxonline.net".into(),
+            ],
+            web_play_path: "/wefeed-h5api-bff/subject/play".into(),
         }
     }
 }
@@ -407,9 +432,10 @@ fn normalize(cfg: &mut ProviderConfig) {
         &mut m.season_field_fallbacks,
         &mut m.episode_field_fallbacks,
         &mut m.episode_fields,
+        &mut m.web_play_domains,
     ] {
         for value in list {
-            *value = value.trim().to_string();
+            *value = value.trim().trim_end_matches('/').to_string();
         }
     }
     for value in [
@@ -423,6 +449,7 @@ fn normalize(cfg: &mut ProviderConfig) {
         &mut m.season_field,
         &mut m.dub_subject_field,
         &mut m.dub_language_field,
+        &mut m.web_play_path,
     ] {
         *value = value.trim().to_string();
     }

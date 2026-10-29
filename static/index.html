@@ -787,8 +787,16 @@ async function openProv(){
     fetch('/api/config').then(r=>r.json()).catch(()=>null)
   ]);
   const rules=cfg?`<div class="mut" style="font-size:11px;margin-top:10px">Playback rules v${esc(cfg.version)} · ${esc(cfg.source)}</div>`:'';
-  $('#provbox').innerHTML='<b>Provider</b>'+l.map(x=>`<button style="display:block;width:100%;margin:6px 0;text-align:left;border-radius:10px" class="${x.id===PROV?'on':''}" onclick="setProv('${x.id}')">${esc(x.label)}</button>`).join('')+rules;
+  const debug=(cur&&PROV==='moviebox')?'<button style="display:block;width:100%;margin:6px 0;text-align:left;border-radius:10px" onclick="openDebug()">Inspect MovieBox response</button>':'';
+  $('#provbox').innerHTML='<b>Provider</b>'+l.map(x=>`<button style="display:block;width:100%;margin:6px 0;text-align:left;border-radius:10px" class="${x.id===PROV?'on':''}" onclick="setProv('${x.id}')">${esc(x.label)}</button>`).join('')+debug+rules;
   $('#prov').style.display='flex';
+}
+function openDebug(){
+  if(!cur)return;
+  let u='/api/debug/moviebox?id='+encodeURIComponent(cur.id.value);
+  if(season)u+='&season='+season+'&episode='+episode;
+  $('#prov').style.display='none';
+  window.open(u,'_blank');
 }
 function setProv(id){PROV=id;ls.set('prov',id);homeItems=[];homeAt=0;$('#prov').style.display='none';$('#q').value?doSearch():loadHome()}
 
