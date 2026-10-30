@@ -140,6 +140,9 @@ class _HomeState extends State<Home> {
       case 'toast':
         await _native.invokeMethod('toast', a.isEmpty ? '' : '${a.first}');
         return true;
+      case 'openUrl':
+        await _native.invokeMethod('openUrl', a.isEmpty ? '' : '${a.first}');
+        return true;
     }
     return null;
   }

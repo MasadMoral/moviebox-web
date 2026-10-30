@@ -129,6 +129,16 @@ body.pip #player .ovr,body.pip #player #back,body.pip #player #ratb,body.pip #pl
 <div id="prov" onclick="if(event.target===this)this.style.display='none'" style="position:fixed;inset:0;background:#000a;z-index:20;display:none;align-items:center;justify-content:center">
   <div id="provbox" style="background:var(--card);border-radius:14px;padding:14px;width:min(320px,90vw)"></div>
 </div>
+<div id="updbox" style="position:fixed;inset:0;background:#000b;z-index:30;display:none;align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--card);border-radius:14px;padding:20px;width:min(420px,92vw)">
+    <b id="updtitle">Update available</b>
+    <p id="updmsg" class="mut" style="margin:8px 0 16px;line-height:1.45"></p>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="dismissUpdate()">Later</button>
+      <a id="updlink" class="btn pri" href="#" target="_blank" rel="noopener">Download update</a>
+    </div>
+  </div>
+</div>
 
 <div id="listview">
   <div id="cont"></div>
@@ -800,5 +810,26 @@ function openDebug(){
 }
 function setProv(id){PROV=id;ls.set('prov',id);homeItems=[];homeAt=0;$('#prov').style.display='none';$('#q').value?doSearch():loadHome()}
 
+let updLatest='';
+async function checkUpdate(){
+  try{
+    const u=await fetch('/api/version').then(r=>r.json());
+    if(!u||!u.update_available||!u.latest_url)return;
+    updLatest=u.latest_version||'';
+    const seen=ls.get('upd',{});
+    if(seen.v===updLatest&&Date.now()-(seen.t||0)<3*86400000)return;
+    $('#updtitle').textContent='Update available · v'+updLatest;
+    $('#updmsg').textContent=(u.message||'A newer version is available.')+' You are on v'+u.version+'.';
+    const a=$('#updlink');a.href=u.latest_url;
+    a.onclick=e=>{if(hasBridge()){e.preventDefault();native('openUrl',u.latest_url)}};
+    $('#updbox').style.display='flex';
+  }catch(e){}
+}
+function dismissUpdate(){
+  if(updLatest)ls.set('upd',{v:updLatest,t:Date.now()});
+  $('#updbox').style.display='none';
+}
+
 loadHome();
+checkUpdate();
 </script></body></html>

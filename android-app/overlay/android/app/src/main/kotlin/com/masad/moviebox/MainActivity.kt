@@ -108,6 +108,15 @@ class MainActivity : FlutterActivity() {
                     toast(call.arguments as? String ?: "")
                     result.success(true)
                 }
+                "openUrl" -> {
+                    val url = call.argument<String>("url") ?: ""
+                    if (url.startsWith("http://") || url.startsWith("https://")) {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        result.success(true)
+                    } else {
+                        result.success(false)
+                    }
+                }
                 "getVolume" -> result.success(getSystemVolume())
                 "setVolume" -> {
                     setSystemVolume((call.arguments as? Number)?.toDouble() ?: 1.0)

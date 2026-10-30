@@ -145,6 +145,22 @@ fn is_notice_url(url: &str, cfg: &MovieBoxConfig) -> bool {
         .any(|pattern| !pattern.is_empty() && u.contains(pattern.as_str()))
 }
 
+/// The upgrade clip is ~23 seconds and <1 MB, while full episodes/movies are
+/// much larger. Catch copies that use a CDN/URL we do not know yet.
+fn is_notice_media(
+    url: Option<&str>,
+    duration_secs: Option<u64>,
+    size_bytes: Option<u64>,
+    cfg: &MovieBoxConfig,
+) -> bool {
+    if url.is_some_and(|u| is_notice_url(u, cfg)) {
+        return true;
+    }
+    let small = size_bytes.is_some_and(|s| s > 0 && s <= cfg.notice_max_bytes);
+    let short = duration_secs.is_some_and(|d| d > 0 && d <= cfg.notice_max_duration_secs);
+    small && (short || duration_secs.is_none())
+}
+
 fn is_media_url(url: &str, cfg: &MovieBoxConfig) -> bool {
     let u = url.to_ascii_lowercase();
     u.starts_with("http")
@@ -153,6 +169,10 @@ fn is_media_url(url: &str, cfg: &MovieBoxConfig) -> bool {
             .media_extensions
             .iter()
             .any(|ext| !ext.is_empty() && u.contains(ext.as_str()))
+}
+
+fn release_is_notice(release: &Release, cfg: &MovieBoxConfig) -> bool {
+    is_notice_media(release.direct_url(), None, release.size_bytes, cfg)
 }
 
 fn field_str<'a>(value: &'a Value, field: &str) -> Option<&'a str> {
@@ -285,6 +305,10 @@ fn detector_releases_from(
                         .get(1)
                         .and_then(|f| entry.get(f).and_then(json_size))
                 });
+                let duration_secs = entry.get("duration").and_then(json_usize).map(|d| d as u64);
+                if is_notice_media(Some(link), duration_secs, size_bytes, cfg) {
+                    continue;
+                }
                 let resource_id = cfg.resource_id_fields.iter().find_map(|field| {
                     entry.get(field).and_then(|v| {
                         v.as_str()
@@ -454,6 +478,11 @@ fn web_play_release(
     if is_notice_url(url, cfg) {
         return;
     }
+    let duration_secs = item.get("duration").and_then(json_usize).map(|d| d as u64);
+    let size_bytes = item.get("size").and_then(json_size);
+    if is_notice_media(Some(url), duration_secs, size_bytes, cfg) {
+        return;
+    }
     let quality = item
         .get("resolutions")
         .or_else(|| item.get("resolution"))
@@ -462,7 +491,6 @@ fn web_play_release(
         .get("codecName")
         .and_then(Value::as_str)
         .map(str::to_string);
-    let size_bytes = item.get("size").and_then(json_size);
     let resource_id = item.get("id").map(|v| {
         v.as_str()
             .map(str::to_string)
@@ -692,6 +720,7 @@ async fn moviebox_detector_releases(a: &App, id: &str, se: usize, ep: usize) -> 
 async fn moviebox_res(a: &App, id: &str, se: usize, ep: usize, res: u32) -> Vec<Release> {
     use moviebox_tui::providers::moviebox::adapt;
     let c = &a.svc.client;
+    let cfg = a.cfg.current();
     let ua = c.user_agent().to_string();
     let mut pages = vec![ep.saturating_sub(1) / 20 + 1];
     if pages[0] != 1 {
@@ -746,6 +775,9 @@ async fn moviebox_res(a: &App, id: &str, se: usize, ep: usize, res: u32) -> Vec<
                     m.direct_file = true;
                     m.headers = vec![("User-Agent".to_string(), ua.clone())];
                 }
+            }
+            if release_is_notice(&rel, &cfg.moviebox) {
+                continue;
             }
             out.push(rel);
         }
@@ -815,7 +847,13 @@ async fn fetch_releases(
                 return Ok(web);
             }
 
-            let main = s.client.episode_streams(id, se, ep).await;
+            let cfg = a.cfg.current();
+            let main = s.client.episode_streams(id, se, ep).await.map(|items| {
+                items
+                    .into_iter()
+                    .filter(|r| !release_is_notice(r, &cfg.moviebox))
+                    .collect::<Vec<_>>()
+            });
             // resolutions we already have as real (non-DASH) files
             let have: std::collections::HashSet<String> = main
                 .as_ref()
@@ -826,9 +864,14 @@ async fn fetch_releases(
                         .collect()
                 })
                 .unwrap_or_default();
-            let extra = moviebox_fallback(a, id, se, ep, &have).await;
+            let extra: Vec<Release> = moviebox_fallback(a, id, se, ep, &have)
+                .await
+                .into_iter()
+                .filter(|r| !release_is_notice(r, &cfg.moviebox))
+                .collect();
             match main {
                 Ok(mut v) => {
+                    v.retain(|r| !release_is_notice(r, &cfg.moviebox));
                     let mut seen: std::collections::HashSet<String> = v
                         .iter()
                         .filter_map(|r| r.direct_url())
@@ -843,6 +886,15 @@ async fn fetch_releases(
                         }
                     }
                     v.sort_by(|x, y| y.resolution_u64().cmp(&x.resolution_u64()));
+                    if v.is_empty() {
+                        return Err(if se != 0 || ep != 0 {
+                            "MovieBox only returned the 23-second upgrade clip for this episode. Try 4KHDHub/Dramachi from the provider menu, or update the app."
+                                .to_string()
+                        } else {
+                            "MovieBox only returned the 23-second upgrade clip. Try another quality or provider."
+                                .to_string()
+                        });
+                    }
                     Ok(v)
                 }
                 Err(e) => {
@@ -1065,6 +1117,47 @@ async fn config_refresh(State(a): State<App>) -> Json<Value> {
     Json(a.cfg.info())
 }
 
+fn version_parts(v: &str) -> Vec<u64> {
+    v.trim()
+        .trim_start_matches('v')
+        .split('.')
+        .map(|part| {
+            part.chars()
+                .take_while(char::is_ascii_digit)
+                .collect::<String>()
+                .parse()
+                .unwrap_or(0)
+        })
+        .collect()
+}
+
+/// True when `current` is older than `latest` (numeric dotted comparison).
+fn version_is_older(current: &str, latest: &str) -> bool {
+    let a = version_parts(current);
+    let b = version_parts(latest);
+    for i in 0..a.len().max(b.len()) {
+        let x = a.get(i).copied().unwrap_or(0);
+        let y = b.get(i).copied().unwrap_or(0);
+        if x != y {
+            return x < y;
+        }
+    }
+    false
+}
+
+async fn version_info(State(a): State<App>) -> Json<Value> {
+    let cfg = a.cfg.current();
+    let current = env!("CARGO_PKG_VERSION");
+    let latest = cfg.latest_version.trim();
+    Json(json!({
+        "version": current,
+        "latest_version": latest,
+        "latest_url": cfg.latest_url,
+        "message": cfg.update_message,
+        "update_available": !latest.is_empty() && version_is_older(current, latest),
+    }))
+}
+
 /// The quickest way to see what the app actually receives from MovieBox.
 /// Open this in a browser while the server is running:
 /// `/api/debug/moviebox?id=SUBJECT_ID&season=1&episode=1`
@@ -1277,6 +1370,7 @@ pub async fn serve(addr: String, wait_init: bool) -> std::io::Result<()> {
         .route("/api/streams", get(streams))
         .route("/api/providers", get(providers))
         .route("/api/config", get(config_info))
+        .route("/api/version", get(version_info))
         .route("/api/config/refresh", post(config_refresh))
         .route("/api/debug/moviebox", get(debug_moviebox))
         .route("/api/subs", get(subs))
@@ -1439,7 +1533,7 @@ mod tests {
                     "links": [{
                         "file": "https://cdn.example/movie.mkv?sign=a&t=1",
                         "height": 1080,
-                        "bytes": "123456",
+                        "bytes": "523456789",
                         "uuid": "remote-1",
                         "name": "Remote title",
                         "uploader": "Encoder"
@@ -1465,7 +1559,7 @@ mod tests {
         let releases = detector_releases_from(&payload, 0, 0, "TestAgent/1.0", None, &rules);
         assert_eq!(releases.len(), 1);
         assert_eq!(releases[0].quality.as_deref(), Some("1080p"));
-        assert_eq!(releases[0].size_bytes, Some(123456));
+        assert_eq!(releases[0].size_bytes, Some(523456789));
         assert_eq!(releases[0].resource_id.as_deref(), Some("remote-1"));
         assert_eq!(releases[0].filename, "Remote title");
         assert_eq!(releases[0].mirrors[0].label, "Encoder");
@@ -1479,7 +1573,7 @@ mod tests {
                     "uploader": "uploader",
                     "source": "source",
                     "links": [{
-                        "season": 1, "episode": 2, "height": 1080, "bytes": "123456",
+                        "season": 1, "episode": 2, "height": 1080, "bytes": "523456789",
                         "uuid": "remote-1", "name": "Remote title", "uploader": "Encoder",
                         "file": "https://cdn.example/movie.mkv?sign=a&t=1"
                     }]
@@ -1497,10 +1591,66 @@ mod tests {
         );
         assert_eq!(releases.len(), 1);
         assert_eq!(releases[0].quality.as_deref(), Some("1080p"));
-        assert_eq!(releases[0].size_bytes, Some(123456));
+        assert_eq!(releases[0].size_bytes, Some(523456789));
         assert_eq!(releases[0].filename, "Remote title");
         assert_eq!(releases[0].mirrors[0].label, "Encoder");
         assert!(releases[0].mirrors[0].direct_file);
+    }
+
+    #[test]
+    fn version_comparison_handles_dotted_versions() {
+        assert!(version_is_older("1.0.4", "1.0.5"));
+        assert!(!version_is_older("1.0.5", "1.0.5"));
+        assert!(version_is_older("1.0.9", "1.0.10"));
+        assert!(version_is_older("v1.0.4", "1.0.5"));
+        assert!(!version_is_older("1.2", "1.1.9"));
+    }
+
+    #[test]
+    fn notice_clip_is_rejected_by_size_even_with_a_new_url() {
+        let payload = json!({
+            "data": {
+                "resourceDetectors": [{
+                    "resolutionList": [
+                        {
+                            "resolution": 1080, "size": "824720",
+                            "resourceId": "notice",
+                            "resourceLink": "https://new-cdn.example/update-app.mp4"
+                        },
+                        {
+                            "resolution": 1080, "size": "900000000",
+                            "resourceId": "real",
+                            "resourceLink": "https://new-cdn.example/movie.mp4"
+                        },
+                        {
+                            "resolution": 720, "size": "50000000", "duration": 40,
+                            "resourceId": "short-but-real",
+                            "resourceLink": "https://new-cdn.example/short.mp4"
+                        }
+                    ]
+                }]
+            }
+        });
+
+        let releases = detector_releases_from(
+            &payload,
+            0,
+            0,
+            "TestAgent/1.0",
+            None,
+            &MovieBoxConfig::default(),
+        );
+        assert_eq!(releases.len(), 2);
+        assert!(
+            releases
+                .iter()
+                .all(|r| r.resource_id.as_deref() != Some("notice"))
+        );
+        assert!(
+            releases
+                .iter()
+                .any(|r| r.resource_id.as_deref() == Some("short-but-real"))
+        );
     }
 
     #[test]
@@ -1518,14 +1668,14 @@ mod tests {
                         "id": "1",
                         "url": "https://bcdn.hakunaymatata.com/sd.mp4?sign=x",
                         "resolutions": "360",
-                        "size": "1000",
+                        "size": "187953280",
                         "codecName": "h264"
                     },
                     {
                         "id": "2",
                         "url": "https://bcdn.hakunaymatata.com/hd.mp4?sign=y",
                         "resolutions": "1080",
-                        "size": "2000",
+                        "size": "1499268646",
                         "codecName": "h264"
                     },
                     {
@@ -1538,7 +1688,7 @@ mod tests {
                 "dash": [{
                     "url": "https://cdn.example/index.mpd",
                     "resolutions": "1080,720,480",
-                    "size": "3000"
+                    "size": "1263719178"
                 }]
             }
         });
@@ -1554,7 +1704,7 @@ mod tests {
         );
         assert_eq!(releases.len(), 2);
         assert_eq!(releases[0].quality.as_deref(), Some("1080p"));
-        assert_eq!(releases[0].size_bytes, Some(2000));
+        assert_eq!(releases[0].size_bytes, Some(1499268646));
         assert_eq!(releases[0].season, Some(1));
         assert_eq!(releases[0].episode, Some(2));
         assert_eq!(releases[0].mirrors[0].label, "MovieBox Web");

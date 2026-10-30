@@ -1,5 +1,8 @@
 {
-  "version": 2,
+  "version": 3,
+  "latest_version": "1.0.5",
+  "latest_url": "https://github.com/MasadMoral/moviebox-web/releases/latest",
+  "update_message": "This update fixes MovieBox's 23-second upgrade clip and adds an update check.",
   "_doc": "Remote playback rules for MovieBox. Edit and push to main; the app fetches this file at startup, every 5 minutes, and after a playback failure. The same document is bundled into the binary as a fallback.",
   "moviebox": {
     "detectors_paths": ["resourceDetectors", "data.resourceDetectors"],
@@ -34,6 +37,8 @@
       "https://moviebox.ph",
       "https://movieboxonline.net"
     ],
-    "web_play_path": "/wefeed-h5api-bff/subject/play"
+    "web_play_path": "/wefeed-h5api-bff/subject/play",
+    "notice_max_bytes": 1500000,
+    "notice_max_duration_secs": 60
   }
 }

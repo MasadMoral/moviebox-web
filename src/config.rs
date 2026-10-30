@@ -24,9 +24,16 @@ const RETRY_SECS: u64 = 45;
 const FORCE_REFRESH_MS: u64 = 1_800;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(default)]
 pub struct ProviderConfig {
     #[serde(default = "default_version")]
     pub version: u32,
+    /// Latest published app version. Older clients show an update prompt.
+    pub latest_version: String,
+    /// Where the update prompt sends people (release page / APK).
+    pub latest_url: String,
+    /// Optional extra sentence for the update prompt.
+    pub update_message: String,
     #[serde(default)]
     pub moviebox: MovieBoxConfig,
 }
@@ -35,6 +42,9 @@ impl Default for ProviderConfig {
     fn default() -> Self {
         Self {
             version: 1,
+            latest_version: env!("CARGO_PKG_VERSION").to_string(),
+            latest_url: "https://github.com/MasadMoral/moviebox-web/releases/latest".into(),
+            update_message: "A newer version of MovieBox Web is available.".into(),
             moviebox: MovieBoxConfig::default(),
         }
     }
@@ -44,6 +54,12 @@ impl ProviderConfig {
     pub fn validate(&self) -> Result<(), String> {
         if self.version == 0 {
             return Err("version must be at least 1".into());
+        }
+        if self.latest_version.trim().is_empty() {
+            return Err("latest_version must not be empty".into());
+        }
+        if !self.latest_url.trim().is_empty() && !self.latest_url.starts_with("http") {
+            return Err("latest_url must be empty or start with http".into());
         }
         let m = &self.moviebox;
         if m.detectors_paths.is_empty() || m.detectors_paths.iter().any(|p| p.trim().is_empty()) {
@@ -145,6 +161,12 @@ pub struct MovieBoxConfig {
     pub web_play_domains: Vec<String>,
     /// Path of the web playback endpoint.
     pub web_play_path: String,
+    /// Files at or below this size are treated as the 23-second upgrade clip
+    /// when their duration also looks like a trailer/notice.
+    pub notice_max_bytes: u64,
+    /// Duration at or below this is treated as a trailer/notice when the file
+    /// is also small. Full episodes/movies are much longer.
+    pub notice_max_duration_secs: u64,
 }
 
 impl Default for MovieBoxConfig {
@@ -253,6 +275,8 @@ impl Default for MovieBoxConfig {
                 "https://movieboxonline.net".into(),
             ],
             web_play_path: "/wefeed-h5api-bff/subject/play".into(),
+            notice_max_bytes: 1_500_000,
+            notice_max_duration_secs: 60,
         }
     }
 }
@@ -408,6 +432,13 @@ pub fn parse_config(text: &str) -> Result<ProviderConfig, String> {
 }
 
 fn normalize(cfg: &mut ProviderConfig) {
+    cfg.latest_version = cfg
+        .latest_version
+        .trim()
+        .trim_start_matches('v')
+        .to_string();
+    cfg.latest_url = cfg.latest_url.trim().to_string();
+    cfg.update_message = cfg.update_message.trim().to_string();
     let m = &mut cfg.moviebox;
     for value in &mut m.notice_patterns {
         *value = value.trim().to_ascii_lowercase();
