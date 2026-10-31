@@ -580,6 +580,45 @@ function endGesture(e){
 V.addEventListener('lostpointercapture',endGesture);
 V.addEventListener('contextmenu',e=>e.preventDefault());
 
+/* ---------- keyboard: space = play/pause (hold = 2x like mouse hold), arrows = seek ±5s, dblclick = fullscreen ---------- */
+function togglePlay(){if(V.paused)V.play().catch(()=>{});else V.pause()}
+let spaceT=null;
+function onSpaceDown(){
+  spaceT=Date.now();clearTimeout(lpT);spaceHeld=true;
+  if(!V.paused){
+    lpT=setTimeout(()=>{
+      if(!spaceHeld)return;
+      fast=true;
+      const f=Math.min(16,userRate*2);
+      V.playbackRate=f;
+      $('#spd').textContent=(+f.toFixed(2))+'× ▶▶';$('#spd').style.display='block';
+    },450);
+  }
+}
+function onSpaceUp(){
+  clearTimeout(lpT);
+  const held=Date.now()-spaceT<450;
+  spaceHeld=false;endFast();
+  if(held)togglePlay();
+}
+let spaceHeld=false;
+function onKey(e,down){
+  const sp=(e.key===' '||e.key==='Spacebar')||e.code==='Space';
+  if(sp){
+    e.preventDefault();
+    if(down){if(e.repeat)return;onSpaceDown()}else onSpaceUp();
+  }else if(e.key==='ArrowRight'||e.key==='ArrowLeft'){
+    if(e.repeat)return;
+    e.preventDefault();
+    const d=e.key==='ArrowRight'?5:-5;
+    const dur=V.duration||0;
+    V.currentTime=Math.min(Math.max((V.currentTime||0)+d,0),dur||Infinity);
+  }
+}
+window.addEventListener('keydown',e=>{if(e.target&&['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName))return;wake();onKey(e,true)});
+window.addEventListener('keyup',e=>onKey(e,false));
+V.addEventListener('dblclick',e=>{e.preventDefault();toggleFs()});
+
 /* ---------- media session / hardware keys / PiP ---------- */
 function mediaPayload(){
   return {
