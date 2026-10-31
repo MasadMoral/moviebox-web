@@ -855,8 +855,6 @@ async function checkUpdate(){
     const u=await fetch('/api/version').then(r=>r.json());
     if(!u||!u.update_available||!u.latest_url)return;
     updLatest=u.latest_version||'';
-    const seen=ls.get('upd',{});
-    if(seen.v===updLatest&&Date.now()-(seen.t||0)<3*86400000)return;
     $('#updtitle').textContent='Update available · v'+updLatest;
     $('#updmsg').textContent=(u.message||'A newer version is available.')+' You are on v'+u.version+'.';
     const a=$('#updlink');a.href=u.latest_url;
@@ -865,7 +863,6 @@ async function checkUpdate(){
   }catch(e){}
 }
 function dismissUpdate(){
-  if(updLatest)ls.set('upd',{v:updLatest,t:Date.now()});
   $('#updbox').style.display='none';
 }
 
