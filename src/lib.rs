@@ -1145,16 +1145,41 @@ fn version_is_older(current: &str, latest: &str) -> bool {
     false
 }
 
+/// Fetch the latest published GitHub release tag (e.g. "v1.0.6" -> "1.0.6").
+/// Used as the source of truth for the update prompt so a renamed/new release
+/// is picked up automatically instead of relying on a manually edited rules file.
+async fn github_latest_release(http: &reqwest::Client) -> Option<String> {
+    let url = "https://api.github.com/repos/MasadMoral/moviebox-web/releases/latest";
+    let response = http
+        .get(url)
+        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+        .timeout(std::time::Duration::from_secs(3))
+        .send()
+        .await
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let body: Value = response.json().await.ok()?;
+    let tag = body.get("tag_name")?.as_str()?.trim().to_string();
+    Some(tag.trim_start_matches('v').to_string())
+}
+
 async fn version_info(State(a): State<App>) -> Json<Value> {
     let cfg = a.cfg.current();
     let current = env!("CARGO_PKG_VERSION");
-    let latest = cfg.latest_version.trim();
+    let latest = github_latest_release(&a.http).await.unwrap_or_default();
+    let latest = if latest.trim().is_empty() {
+        cfg.latest_version.trim().to_string()
+    } else {
+        latest
+    };
     Json(json!({
         "version": current,
         "latest_version": latest,
         "latest_url": cfg.latest_url,
         "message": cfg.update_message,
-        "update_available": !latest.is_empty() && version_is_older(current, latest),
+        "update_available": !latest.is_empty() && version_is_older(current, &latest),
     }))
 }
 
@@ -1601,6 +1626,7 @@ mod tests {
     fn version_comparison_handles_dotted_versions() {
         assert!(version_is_older("1.0.4", "1.0.5"));
         assert!(!version_is_older("1.0.5", "1.0.5"));
+        assert!(version_is_older("1.0.5", "1.0.6"));
         assert!(version_is_older("1.0.9", "1.0.10"));
         assert!(version_is_older("v1.0.4", "1.0.5"));
         assert!(!version_is_older("1.2", "1.1.9"));
