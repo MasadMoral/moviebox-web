@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "latest_version": "1.0.6",
+  "latest_version": "1.0.7",
   "latest_url": "https://github.com/MasadMoral/moviebox-web/releases/latest",
   "update_message": "This update fixes MovieBox's 23-second upgrade clip and adds an update check.",
   "_doc": "Remote playback rules for MovieBox. Edit and push to main; the app fetches this file at startup, every 5 minutes, and after a playback failure. The same document is bundled into the binary as a fallback.",
